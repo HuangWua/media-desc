@@ -84,7 +84,7 @@ struct ImageReport: Report {
     let animals: [DetectedAnimal]
     let rectangles: [DetectedRectangle]
     let contours: [DetectedContour]
-    let horizonAngle: Double?
+    let horizonAngle: Double? = nil
     let aesthetics: AestheticsScores?
     let lensSmudge: LensSmudgeResult?
     let attentionSaliency: SaliencyRegion?

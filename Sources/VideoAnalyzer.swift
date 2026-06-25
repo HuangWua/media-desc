@@ -101,6 +101,7 @@ func extractKeyframes(_ asset: AVAsset, maxFrames: Int) async throws -> [(TimeIn
 
 // MARK: - Single Frame Analysis
 
+@available(macOS 26, *)
 func analyzeFrame(timestamp: TimeInterval, image: CGImage) async -> FrameSnapshot {
     // Start OCR + classification concurrently; saliency runs inline (avoids type-inference compiler crash)
     async let ocr = try? RecognizeTextRequest().perform(on: image)

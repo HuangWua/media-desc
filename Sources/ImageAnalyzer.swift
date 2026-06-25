@@ -18,7 +18,7 @@ enum VisionTaskResult {
     case lensSmudge(LensSmudgeResult)
     case attentionSaliency(SaliencyRegion)
     case objectSaliency(SaliencyRegion)
-    case horizon(Double)
+    case humanRects([DetectedRectangle])
     case rectangles([DetectedRectangle])
     case contours([DetectedContour])
     case animals([DetectedAnimal])
@@ -28,6 +28,7 @@ enum VisionTaskResult {
 
 // MARK: - Public API
 
+@available(macOS 26, *)
 func analyzeImage(_ path: String) async throws -> ImageReport {
     guard let cgImage = loadCGImage(path) else {
         throw MediaError.badImage(path)
@@ -46,10 +47,10 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
                 return .ocr([])
             }
         }
-        // Document segmentation (macOS 15+; use DetectDocumentSegmentation, not RecognizeDocuments)
+        // Document recognition (macOS 26+)
         group.addTask {
             do {
-                let r = try await DetectDocumentSegmentationRequest().perform(on: cgImage)
+                let r = try await RecognizeDocumentsRequest().perform(on: cgImage)
                 return .documents(parseDocuments(r))
             } catch {
                 return .documents([])
@@ -77,7 +78,7 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         group.addTask {
             do {
                 let r = try await DetectFaceRectanglesRequest().perform(on: cgImage)
-                return .faceRects(r.map { $0.boundingBox.cgRect })
+                return .faceRects(parseFaceRects(r))
             } catch {
                 return .faceRects([])
             }
@@ -86,7 +87,7 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         group.addTask {
             do {
                 let r = try await DetectFaceLandmarksRequest().perform(on: cgImage)
-                return .faceLandmarks(r.compactMap { $0.landmarks })
+                return .faceLandmarks(parseFaceLandmarks(r))
             } catch {
                 return .faceLandmarks([])
             }
@@ -95,7 +96,7 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         group.addTask {
             do {
                 let r = try await DetectFaceCaptureQualityRequest().perform(on: cgImage)
-                return .faceQuality(r.compactMap { $0.captureQuality?.score })
+                return .faceQuality(parseFaceQuality(r))
             } catch {
                 return .faceQuality([])
             }
@@ -145,32 +146,20 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
                 return .objectSaliency(SaliencyRegion(boundingBox: nil, isAttentionBased: false))
             }
         }
-        // Horizon
-        group.addTask {
-            do {
-                let r = try await DetectHorizonRequest().perform(on: cgImage)
-                // angle is Measurement<UnitAngle>; convert to radians via .value (default unit is radians)
-                return .horizon(r?.angle.value ?? 0)
-            } catch {
-                return .horizon(0)
-            }
-        }
         // Rectangles
         group.addTask {
             do {
                 let r = try await DetectRectanglesRequest().perform(on: cgImage)
-                return .rectangles(r.map {
-                    DetectedRectangle(boundingBox: $0.boundingBox.cgRect, confidence: $0.confidence)
-                })
+                return .rectangles(parseRectangles(r))
             } catch {
                 return .rectangles([])
             }
         }
-        // Contours (new async API, macOS 15+)
+        // Contours
         group.addTask {
             do {
-                let r = try await detectContours(cgImage)
-                return .contours(r)
+                let r = try await DetectContoursRequest().perform(on: cgImage)
+                return .contours(parseContours(r))
             } catch {
                 return .contours([])
             }
@@ -179,10 +168,7 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         group.addTask {
             do {
                 let r = try await RecognizeAnimalsRequest().perform(on: cgImage)
-                return .animals(r.map { obs in
-                    let identifier = obs.labels.first?.identifier ?? "unknown"
-                    return DetectedAnimal(identifier: identifier, confidence: obs.confidence)
-                })
+                return .animals(parseAnimals(r))
             } catch {
                 return .animals([])
             }
@@ -203,6 +189,15 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
                 return .personMask(true)
             } catch {
                 return .personMask(false)
+            }
+        }
+        // Human rectangles
+        group.addTask {
+            do {
+                let r = try await DetectHumanRectanglesRequest().perform(on: cgImage)
+                return .humanRects(parseHumanRects(r))
+            } catch {
+                return .humanRects([])
             }
         }
         // Image feature print
@@ -226,16 +221,6 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
                 return .personMask(false)
             }
         }
-        // Foreground instance mask
-        group.addTask {
-            do {
-                let _ = try await GenerateForegroundInstanceMaskRequest().perform(on: cgImage)
-                return .personMask(true)
-            } catch {
-                return .personMask(false)
-            }
-        }
-
         // Collect results
         var collected: [VisionTaskResult] = []
         for try await result in group {
@@ -297,7 +282,7 @@ func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageRepo
     var lensSmudge: LensSmudgeResult? = nil
     var attnSaliency: SaliencyRegion? = nil
     var objSaliency: SaliencyRegion? = nil
-    var horizon: Double? = nil
+    var humanRects: [DetectedRectangle] = []
     var rects: [DetectedRectangle] = []
     var contours: [DetectedContour] = []
     var animals: [DetectedAnimal] = []
@@ -317,7 +302,7 @@ func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageRepo
         case .lensSmudge(let v): lensSmudge = v
         case .attentionSaliency(let v): attnSaliency = v
         case .objectSaliency(let v): objSaliency = v
-        case .horizon(let v): horizon = v
+        case .humanRects(let v): humanRects = v
         case .rectangles(let v): rects = v
         case .contours(let v): contours = v
         case .animals(let v): animals = v
@@ -336,13 +321,12 @@ func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageRepo
         animals: animals,
         rectangles: rects,
         contours: contours,
-        horizonAngle: horizon,
         aesthetics: aesthetics,
         lensSmudge: lensSmudge,
         attentionSaliency: attnSaliency,
         objectSaliency: objSaliency,
         hasPersonMask: hasPersonMask,
-        humanRectangles: [],
+        humanRectangles: humanRects,
         featurePrintHash: featureHash
     )
 }
@@ -358,29 +342,6 @@ func detectLensSmudge(_ cgImage: CGImage) async throws -> VisionTaskResult {
         return .lensSmudge(LensSmudgeResult(hasSmudge: hasSmudge, confidence: r.confidence))
     }
     throw VisionUnavailableError()
-}
-
-func detectContours(_ cgImage: CGImage) async throws -> [DetectedContour] {
-    // Use new async DetectContoursRequest (macOS 15+), which returns ContoursObservation.
-    let r = try await DetectContoursRequest().perform(on: cgImage)
-    var result: [DetectedContour] = []
-    for contour in r.topLevelContours {
-        guard !contour.normalizedPoints.isEmpty else { continue }
-        // Compute bounding box from normalized points array
-        var minX: Float = 1.0, minY: Float = 1.0, maxX: Float = 0.0, maxY: Float = 0.0
-        for pt in contour.normalizedPoints {
-            if pt.x < minX { minX = pt.x }
-            if pt.y < minY { minY = pt.y }
-            if pt.x > maxX { maxX = pt.x }
-            if pt.y > maxY { maxY = pt.y }
-        }
-        let cgRect = CGRect(
-            x: CGFloat(minX), y: CGFloat(minY),
-            width: CGFloat(maxX - minX), height: CGFloat(maxY - minY)
-        )
-        result.append(DetectedContour(boundingBox: cgRect, pointCount: contour.pointCount))
-    }
-    return result
 }
 
 struct VisionUnavailableError: Error {}
