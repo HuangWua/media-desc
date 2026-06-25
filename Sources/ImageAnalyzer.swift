@@ -245,6 +245,12 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
     }
 
     // ── OCR Phase (after TaskGroup, serial) ──
+    // For short images, OCR starts early via Task to run in parallel with Vision tasks.
+    // For long images, OCR must wait for textRects result first.
+    let shortOCRTask: Task<[TextBlock], Error>? = isLongImage(cgImage)
+        ? nil
+        : Task { try await singlePassOCR(cgImage) }
+
     let ocrBlocks: [TextBlock]
     if isLongImage(cgImage) {
         var textRects: [DetectedRectangle] = []
@@ -261,7 +267,7 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         }
     } else {
         do {
-            ocrBlocks = try await singlePassOCR(cgImage)
+            ocrBlocks = try await shortOCRTask?.value ?? []
         } catch {
             ocrBlocks = []
         }
@@ -458,8 +464,7 @@ func cropSlicePixel(_ image: CGImage, yStart: CGFloat, yEnd: CGFloat) -> CGImage
 /// Returns array of (yStart, yEnd) pixel tuples, or nil if fallback needed.
 func gapAnalysis(
     _ textRects: [DetectedRectangle],
-    imageHeight: CGFloat,
-    targetSliceHeight: CGFloat = 3000
+    imageHeight: CGFloat
 ) -> [(yStart: CGFloat, yEnd: CGFloat)]? {
     guard !textRects.isEmpty else { return nil }
 
@@ -529,8 +534,9 @@ func gapAnalysis(
 }
 
 /// Merge OCR results from multiple slices: remap Y to original image space, dedup overlapping blocks.
-func mergeSlicedOCR(_ slices: [(yStart: CGFloat, yEnd: CGFloat, blocks: [TextBlock])]) -> [TextBlock] {
-    // Remap each block's Y coordinate to original image space
+/// All bounding-box coordinates in output are normalized [0,1] relative to the full image.
+func mergeSlicedOCR(_ slices: [(yStart: CGFloat, yEnd: CGFloat, blocks: [TextBlock])], fullImageHeight: CGFloat) -> [TextBlock] {
+    // Remap each block's Y coordinate to original image space, then normalize to [0,1]
     var allBlocks: [TextBlock] = []
     for (yStart, yEnd, blocks) in slices {
         let croppedH = yEnd - yStart
@@ -538,16 +544,16 @@ func mergeSlicedOCR(_ slices: [(yStart: CGFloat, yEnd: CGFloat, blocks: [TextBlo
             let normY = block.boundingBox?.origin.y ?? 0
             let normH = block.boundingBox?.height ?? 0
             // Vision normalized coords (bottom-left origin) → pixel coords (top-left origin)
-            // then offset by slice start position in the original image
+            // then offset by slice start position, then normalize back to full-image [0,1]
             let topPixel = (1.0 - normY - normH) * croppedH
-            let originalY = topPixel + yStart
+            let pixelY = topPixel + yStart
             let originalRect: CGRect?
             if let box = block.boundingBox {
                 originalRect = CGRect(
                     x: box.origin.x,
-                    y: originalY,
+                    y: pixelY / fullImageHeight,
                     width: box.width,
-                    height: normH * croppedH
+                    height: (normH * croppedH) / fullImageHeight
                 )
             } else {
                 originalRect = nil
@@ -560,10 +566,12 @@ func mergeSlicedOCR(_ slices: [(yStart: CGFloat, yEnd: CGFloat, blocks: [TextBlo
         }
     }
 
-    // Sort by Y
+    // Sort by normalized Y
     let sorted = allBlocks.sorted { ($0.boundingBox?.origin.y ?? 0) < ($1.boundingBox?.origin.y ?? 0) }
 
-    // Dedup: if two adjacent blocks have Y diff < 3px and string similarity > 0.6, keep higher confidence
+    // Dedup: if two adjacent blocks have Y diff < threshold and string similarity > 0.6, keep higher confidence
+    // Threshold: ~3px equivalent in normalized space
+    let yThreshold = 3.0 / fullImageHeight
     guard sorted.count > 1 else { return sorted }
 
     var deduped: [TextBlock] = [sorted[0]]
@@ -573,7 +581,7 @@ func mergeSlicedOCR(_ slices: [(yStart: CGFloat, yEnd: CGFloat, blocks: [TextBlo
         let prevY = prev.boundingBox?.origin.y ?? 0
         let currY = curr.boundingBox?.origin.y ?? 0
 
-        if abs(currY - prevY) < 3 && levenshteinSimilarity(prev.string, curr.string) > 0.6 {
+        if abs(currY - prevY) < yThreshold && levenshteinSimilarity(prev.string, curr.string) > 0.6 {
             // Duplicate: keep the one with higher confidence
             if curr.confidence > prev.confidence {
                 deduped[deduped.count - 1] = curr
@@ -604,13 +612,13 @@ func fixedHeightOCR(_ cgImage: CGImage) async throws -> [TextBlock] {
                 let blocks = try await singlePassOCR(cropped)
                 slices.append((y, yEnd, blocks))
             } catch {
-                // Skip failed slice, continue
+                fputs("warning: OCR failed for slice y=\(Int(y))-\(Int(yEnd)): \(error.localizedDescription)\n", stderr)
             }
         }
         y += step
     }
 
-    return mergeSlicedOCR(slices)
+    return mergeSlicedOCR(slices, fullImageHeight: imgH)
 }
 
 /// Long-image OCR orchestrator: gap-guided slicing with fixed-height fallback.
@@ -627,12 +635,12 @@ func longImageOCR(_ cgImage: CGImage, _ textRects: [DetectedRectangle]) async th
                     let blocks = try await singlePassOCR(cropped)
                     slices.append((yStart, yEnd, blocks))
                 } catch {
-                    // Skip failed slice
+                    fputs("warning: OCR failed for slice y=\(Int(yStart))-\(Int(yEnd)): \(error.localizedDescription)\n", stderr)
                 }
             }
         }
         if !slices.isEmpty {
-            return mergeSlicedOCR(slices)
+            return mergeSlicedOCR(slices, fullImageHeight: imgH)
         }
     }
 
