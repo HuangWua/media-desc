@@ -13,9 +13,9 @@ func parseOCR(_ observations: [VNRecognizedTextObservation]) -> [TextBlock] {
     }
 }
 
-func parseDocuments(_ observations: [VNDocumentSegmentationObservation]) -> [DocumentRegion] {
+func parseDocuments(_ observations: [DetectedDocumentObservation]) -> [DocumentRegion] {
     observations.map { obs in
-        DocumentRegion(boundingBox: obs.boundingBox, rows: [])
+        DocumentRegion(boundingBox: obs.boundingBox.cgRect, rows: [])
     }
 }
 
