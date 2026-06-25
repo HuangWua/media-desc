@@ -69,6 +69,8 @@ func analyzeVideo(_ path: String) async throws -> VideoReport {
         transcript: transcript,
         frames: snapshots,
         sceneChanges: changes,
+        trajectories: [],
+        opticalFlowSummary: nil,
         soundType: soundType
     )
 }

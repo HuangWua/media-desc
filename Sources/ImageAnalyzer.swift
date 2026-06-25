@@ -342,6 +342,7 @@ func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageRepo
         attentionSaliency: attnSaliency,
         objectSaliency: objSaliency,
         hasPersonMask: hasPersonMask,
+        humanRectangles: [],
         featurePrintHash: featureHash
     )
 }

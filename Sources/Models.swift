@@ -90,6 +90,7 @@ struct ImageReport: Report {
     let attentionSaliency: SaliencyRegion?
     let objectSaliency: SaliencyRegion?
     let hasPersonMask: Bool
+    let humanRectangles: [DetectedRectangle]  // 🆕
     let featurePrintHash: String?
 }
 
@@ -106,6 +107,13 @@ struct SceneTransition {
     let at: TimeInterval
     let fromLabel: String
     let toLabel: String
+}
+
+struct TrajectoryInfo {
+    let startTime: TimeInterval
+    let duration: TimeInterval
+    let description: String
+    let confidence: Float
 }
 
 enum SoundType: String {
@@ -128,6 +136,8 @@ struct VideoReport: Report {
     let transcript: [TranscriptSegment]
     let frames: [FrameSnapshot]
     let sceneChanges: [SceneTransition]
+    let trajectories: [TrajectoryInfo]       // 🆕
+    let opticalFlowSummary: String?          // 🆕
     let soundType: SoundType
 }
 
