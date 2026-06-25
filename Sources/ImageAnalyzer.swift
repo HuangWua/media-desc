@@ -497,6 +497,11 @@ func gapAnalysis(
         slices.append((sliceStart, imageHeight))
     }
 
+    // If all cuts produced a single full-image slice, fallback to fixed-height
+    if slices.count == 1, let first = slices.first, first.0 == 0, first.1 == imageHeight {
+        return nil
+    }
+
     // Add 5% padding on both sides of each slice (but clamp to [0, imageHeight])
     var paddedSlices: [(CGFloat, CGFloat)] = []
     for (start, end) in slices {
@@ -511,19 +516,25 @@ func gapAnalysis(
 }
 
 /// Merge OCR results from multiple slices: remap Y to original image space, dedup overlapping blocks.
-func mergeSlicedOCR(_ slices: [(yStart: CGFloat, blocks: [TextBlock])]) -> [TextBlock] {
+func mergeSlicedOCR(_ slices: [(yStart: CGFloat, yEnd: CGFloat, blocks: [TextBlock])]) -> [TextBlock] {
     // Remap each block's Y coordinate to original image space
     var allBlocks: [TextBlock] = []
-    for (yStart, blocks) in slices {
+    for (yStart, yEnd, blocks) in slices {
+        let croppedH = yEnd - yStart
         for block in blocks {
-            let originalY = (block.boundingBox?.origin.y ?? 0) + yStart
+            let normY = block.boundingBox?.origin.y ?? 0
+            let normH = block.boundingBox?.height ?? 0
+            // Vision normalized coords (bottom-left origin) → pixel coords (top-left origin)
+            // then offset by slice start position in the original image
+            let topPixel = (1.0 - normY - normH) * croppedH
+            let originalY = topPixel + yStart
             let originalRect: CGRect?
             if let box = block.boundingBox {
                 originalRect = CGRect(
                     x: box.origin.x,
                     y: originalY,
                     width: box.width,
-                    height: box.height
+                    height: normH
                 )
             } else {
                 originalRect = nil
@@ -570,7 +581,7 @@ func fixedHeightOCR(_ cgImage: CGImage) async throws -> [TextBlock] {
     let overlapRatio: CGFloat = 0.20
     let step = sliceHeight * (1.0 - overlapRatio)
 
-    var slices: [(CGFloat, [TextBlock])] = []
+    var slices: [(CGFloat, CGFloat, [TextBlock])] = []
     var y: CGFloat = 0
 
     while y < imgH {
@@ -578,7 +589,7 @@ func fixedHeightOCR(_ cgImage: CGImage) async throws -> [TextBlock] {
         if let cropped = cropSlicePixel(cgImage, yStart: y, yEnd: yEnd) {
             do {
                 let blocks = try await singlePassOCR(cropped)
-                slices.append((y, blocks))
+                slices.append((y, yEnd, blocks))
             } catch {
                 // Skip failed slice, continue
             }
@@ -596,12 +607,12 @@ func longImageOCR(_ cgImage: CGImage, _ textRects: [DetectedRectangle]) async th
 
     // Phase 1: Try gap-guided slicing
     if let sliceBounds = gapAnalysis(textRects, imageHeight: imgH) {
-        var slices: [(CGFloat, [TextBlock])] = []
+        var slices: [(CGFloat, CGFloat, [TextBlock])] = []
         for (yStart, yEnd) in sliceBounds {
             if let cropped = cropSlicePixel(cgImage, yStart: yStart, yEnd: yEnd) {
                 do {
                     let blocks = try await singlePassOCR(cropped)
-                    slices.append((yStart, blocks))
+                    slices.append((yStart, yEnd, blocks))
                 } catch {
                     // Skip failed slice
                 }
@@ -613,5 +624,9 @@ func longImageOCR(_ cgImage: CGImage, _ textRects: [DetectedRectangle]) async th
     }
 
     // Phase 2: Fallback — fixed-height slicing
-    return try await fixedHeightOCR(cgImage)
+    let result = try await fixedHeightOCR(cgImage)
+    if result.isEmpty {
+        fputs("warning: longImageOCR returned 0 blocks for \(Int(imgH))px image\n", stderr)
+    }
+    return result
 }
