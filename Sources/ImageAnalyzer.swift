@@ -22,8 +22,12 @@ enum VisionTaskResult {
     case rectangles([DetectedRectangle])
     case contours([DetectedContour])
     case animals([DetectedAnimal])
-    case personMask(Bool)
     case featureHash(String)
+    case textRects([DetectedRectangle])
+    case bodyPose2D([Joint2D])
+    case bodyPose3D([Joint3D])
+    case handPose([Joint2D])
+    case animalPose([AnimalPoseInfo])
 }
 
 // MARK: - Public API
@@ -34,14 +38,20 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         throw MediaError.badImage(path)
     }
 
+    // Detect language for OCR configuration
+    let lang = await detectImageLanguage(cgImage)
+
     let results: [VisionTaskResult] = try await withThrowingTaskGroup(
         of: VisionTaskResult.self
     ) { group in
 
-        // OCR
+        // OCR (language-aware, .accurate)
         group.addTask {
             do {
-                let r = try await RecognizeTextRequest().perform(on: cgImage)
+                var req = RecognizeTextRequest()
+                req.recognitionLanguages = lang.visionLanguages
+                req.recognitionLevel = .accurate
+                let r = try await req.perform(on: cgImage)
                 return .ocr(parseOCR(r))
             } catch {
                 return .ocr([])
@@ -164,6 +174,15 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
                 return .contours([])
             }
         }
+        // Text rectangles
+        group.addTask {
+            do {
+                let r = try await DetectTextRectanglesRequest().perform(on: cgImage)
+                return .textRects(parseTextRects(r))
+            } catch {
+                return .textRects([])
+            }
+        }
         // Animals
         group.addTask {
             do {
@@ -173,22 +192,40 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
                 return .animals([])
             }
         }
-        // Human body pose
+        // Human body pose 2D
         group.addTask {
             do {
-                let _ = try await DetectHumanBodyPoseRequest().perform(on: cgImage)
-                return .personMask(true)
+                let r = try await DetectHumanBodyPoseRequest().perform(on: cgImage)
+                return .bodyPose2D(parseBodyPose2D(r))
             } catch {
-                return .personMask(false)
+                return .bodyPose2D([])
             }
         }
         // Human hand pose
         group.addTask {
             do {
-                let _ = try await DetectHumanHandPoseRequest().perform(on: cgImage)
-                return .personMask(true)
+                let r = try await DetectHumanHandPoseRequest().perform(on: cgImage)
+                return .handPose(parseHandPose(r))
             } catch {
-                return .personMask(false)
+                return .handPose([])
+            }
+        }
+        // Human body pose 3D
+        group.addTask {
+            do {
+                let r = try await DetectHumanBodyPose3DRequest().perform(on: cgImage)
+                return .bodyPose3D(parseBodyPose3D(r))
+            } catch {
+                return .bodyPose3D([])
+            }
+        }
+        // Animal body pose
+        group.addTask {
+            do {
+                let r = try await DetectAnimalBodyPoseRequest().perform(on: cgImage)
+                return .animalPose(parseAnimalPose(r))
+            } catch {
+                return .animalPose([])
             }
         }
         // Human rectangles
@@ -210,15 +247,6 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
                 return .featureHash(hash)
             } catch {
                 return .featureHash("")
-            }
-        }
-        // Person segmentation
-        group.addTask {
-            do {
-                let _ = try await GeneratePersonSegmentationRequest().perform(on: cgImage)
-                return .personMask(true)
-            } catch {
-                return .personMask(false)
             }
         }
         // Collect results
@@ -265,12 +293,12 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         finalResults[index] = .documents(docsWithOCR)
     }
 
-    return assembleImageReport(path: path, results: finalResults)
+    return assembleImageReport(path: path, lang: lang, results: finalResults)
 }
 
 // MARK: - Result Assembly (pure function)
 
-func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageReport {
+func assembleImageReport(path: String, lang: (code: String, visionLanguages: [Locale.Language]), results: [VisionTaskResult]) -> ImageReport {
     var ocr: [TextBlock] = []
     var docs: [DocumentRegion] = []
     var labels: [DetectedLabel] = []
@@ -286,8 +314,14 @@ func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageRepo
     var rects: [DetectedRectangle] = []
     var contours: [DetectedContour] = []
     var animals: [DetectedAnimal] = []
-    var hasPersonMask = false
     var featureHash: String? = nil
+    var textRects: [DetectedRectangle] = []
+    var bodyPose2D: [Joint2D] = []
+    var bodyPose3D: [Joint3D] = []
+    var handPose: [Joint2D] = []
+    var animalPose: [AnimalPoseInfo] = []
+
+    let scene = deriveSceneTag(labels)
 
     for r in results {
         switch r {
@@ -306,13 +340,19 @@ func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageRepo
         case .rectangles(let v): rects = v
         case .contours(let v): contours = v
         case .animals(let v): animals = v
-        case .personMask(let v): if v { hasPersonMask = true }
         case .featureHash(let v): featureHash = v
+        case .textRects(let v): textRects = v
+        case .bodyPose2D(let v): bodyPose2D = v
+        case .bodyPose3D(let v): bodyPose3D = v
+        case .handPose(let v): handPose = v
+        case .animalPose(let v): animalPose = v
         }
     }
 
     return ImageReport(
         source: URL(fileURLWithPath: path).lastPathComponent,
+        language: lang.code,
+        scene: scene,
         ocrBlocks: ocr,
         documentRegions: docs,
         labels: labels,
@@ -321,14 +361,33 @@ func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageRepo
         animals: animals,
         rectangles: rects,
         contours: contours,
+        textRectangles: textRects,
+        bodyPoseJoints: bodyPose2D,
+        bodyPose3DJoints: bodyPose3D,
+        handPoseJoints: handPose,
+        animalPose: animalPose,
         aesthetics: aesthetics,
         lensSmudge: lensSmudge,
         attentionSaliency: attnSaliency,
         objectSaliency: objSaliency,
-        hasPersonMask: hasPersonMask,
         humanRectangles: humanRects,
         featurePrintHash: featureHash
     )
+}
+
+/// Derive scene category from top classification labels for output routing.
+func deriveSceneTag(_ labels: [DetectedLabel]) -> String {
+    let top3 = labels.prefix(3).map { $0.identifier.lowercased() }
+    let documentKeywords = ["document", "screenshot", "printed_page", "receipt", "chart", "diagram", "webpage", "text"]
+    let peopleKeywords = ["people", "portrait", "person", "face", "crowd", "indoor", "selfie"]
+
+    for keyword in documentKeywords {
+        if top3.contains(where: { $0.contains(keyword) }) { return "document" }
+    }
+    for keyword in peopleKeywords {
+        if top3.contains(where: { $0.contains(keyword) }) { return "people" }
+    }
+    return "generic"
 }
 
 // MARK: - macOS 26 Gated & Fallback Requests

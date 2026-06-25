@@ -26,9 +26,10 @@ import CoreGraphics
 
 /// Fast OCR on image → NLLanguageRecognizer → Vision recognitionLanguages mapping.
 /// Used to configure RecognizeTextRequest for accurate Chinese/Japanese/English OCR.
+@available(macOS 26.0, *)
 func detectImageLanguage(_ cgImage: CGImage) async -> (code: String, visionLanguages: [Locale.Language]) {
     // 1. Fast OCR: accuracy=.fast, Chinese+English bilingual
-    let req = RecognizeTextRequest()
+    var req = RecognizeTextRequest()
     req.recognitionLanguages = [
         Locale.Language(identifier: "zh-Hans"),
         Locale.Language(identifier: "en-US")
