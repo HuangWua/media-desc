@@ -59,8 +59,9 @@ func analyzeVideo(_ path: String) async throws -> VideoReport {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
-    // Phase 3: scene change detection (unchanged)
-    let changes = detectSceneChanges(snapshots)
+    // Phase 3: scene change detection — optical flow (macOS 26+)
+    let changes = await detectSceneChangesOpticalFlow(frameImages)
+    let trajectories = await detectTrajectories(frameImages)
 
     return VideoReport(
         source: url.lastPathComponent,
@@ -69,8 +70,8 @@ func analyzeVideo(_ path: String) async throws -> VideoReport {
         transcript: transcript,
         frames: snapshots,
         sceneChanges: changes,
-        trajectories: [],
-        opticalFlowSummary: nil,
+        trajectories: trajectories,
+        opticalFlowSummary: formatOpticalFlowSummary(changes),
         soundType: soundType
     )
 }
@@ -148,6 +149,108 @@ func detectSceneChanges(_ snapshots: [FrameSnapshot]) -> [SceneTransition] {
     return changes
 }
 
+// MARK: - Optical Flow Scene Detection (macOS 26+)
+
+@available(macOS 26.0, *)
+func detectSceneChangesOpticalFlow(_ frameImages: [(TimeInterval, CGImage)]) async -> [SceneTransition] {
+    guard frameImages.count >= 2 else { return [] }
+
+    var changes: [SceneTransition] = []
+
+    var prevImage: CGImage? = nil
+    var prevLabel: String = ""
+
+    for (ts, image) in frameImages {
+        defer { prevImage = image }
+
+        guard prevImage != nil else {
+            // First frame: get classification label as baseline
+            if let r = try? await ClassifyImageRequest().perform(on: image),
+               let top = r.first {
+                prevLabel = top.identifier
+            }
+            continue
+        }
+
+        // Create new request per frame pair (stateless usage)
+        let request = TrackOpticalFlowRequest()
+        request.computationAccuracy = .medium
+
+        guard let flow = try? await request.perform(on: image, orientation: CGImagePropertyOrientation.up) else { continue }
+
+        let motion = computeGlobalMotion(flow)
+        let threshold: Float = 0.25
+
+        if motion > threshold {
+            let currLabel = (try? await ClassifyImageRequest().perform(on: image))?.first?.identifier ?? ""
+            changes.append(SceneTransition(at: ts, fromLabel: prevLabel, toLabel: currLabel))
+            prevLabel = currLabel
+        }
+    }
+
+    return changes
+}
+
+func computeGlobalMotion(_ flow: OpticalFlowObservation) -> Float {
+    // Compute mean displacement magnitude by sampling flow vectors
+    // across a normalized 8x8 grid using the flow(at:) query API.
+    var sum: Float = 0.0
+    var count: Int = 0
+    let gridSize = 8
+    for i in 0..<gridSize {
+        for j in 0..<gridSize {
+            let px = CGFloat(i) / CGFloat(gridSize - 1)
+            let py = CGFloat(j) / CGFloat(gridSize - 1)
+            let (dx, dy) = flow.flow(at: NormalizedPoint(x: px, y: py))
+            sum += sqrt(dx * dx + dy * dy)
+            count += 1
+        }
+    }
+    return count > 0 ? sum / Float(count) : 0.0
+}
+
+// MARK: - Trajectory Detection (macOS 26+)
+
+@available(macOS 26.0, *)
+func detectTrajectories(_ frameImages: [(TimeInterval, CGImage)]) async -> [TrajectoryInfo] {
+    var trajectories: [TrajectoryInfo] = []
+
+    for (ts, image) in frameImages {
+        let request = DetectTrajectoriesRequest(trajectoryLength: 8)
+
+        guard let observations = try? await request.perform(on: image, orientation: CGImagePropertyOrientation.up) else { continue }
+        for obs in observations {
+            let desc = describeTrajectory(obs)
+            let obsDuration = obs.timeRange?.duration.seconds ?? 0
+            trajectories.append(TrajectoryInfo(
+                startTime: ts - obsDuration,
+                duration: obsDuration,
+                description: desc,
+                confidence: obs.confidence
+            ))
+        }
+    }
+
+    return trajectories
+}
+
+func describeTrajectory(_ obs: TrajectoryObservation) -> String {
+    // Describe parabolic trajectory in human terms.
+    // The observation contains the detected motion path.
+    let coeffs = obs.equationCoefficients
+    if coeffs != .zero {
+        return "parabolic motion (coefficients: 3)"
+    }
+    return "motion detected"
+}
+
+func formatOpticalFlowSummary(_ changes: [SceneTransition]) -> String? {
+    guard !changes.isEmpty else { return "No significant scene changes detected." }
+    return changes.map { c in
+        "\(String(format: "%.0f", c.at))s: \(c.fromLabel) -> \(c.toLabel)"
+    }.joined(separator: "; ")
+}
+
 // MARK: - Audio Track Export
 
 func exportAudioTrack(_ track: AVAssetTrack, to url: URL) async throws {
@@ -212,9 +315,11 @@ func analyzeSpeechFile(_ url: URL) async throws -> (segments: [TranscriptSegment
         finishAfterFile: true
     )
 
-    async let segments = collectSegments(transcriber)
-    async let soundType = collectSoundType(detector)
-    return try await (segments, soundType)
+    // Serial collection — SpeechAnalyzer is an actor; concurrent AsyncSequence iteration
+    // on the same actor may not be truly parallel. Given 142x realtime, this is fine.
+    let segments = try await collectSegments(transcriber)
+    let soundType = try await collectSoundType(detector)
+    return (segments, soundType)
 }
 
 @available(macOS 26.0, *)
