@@ -22,7 +22,7 @@ enum VisionTaskResult {
     case rectangles([DetectedRectangle])
     case contours([DetectedContour])
     case animals([DetectedAnimal])
-    case personMask
+    case personMask(Bool)
     case featureHash(String)
 }
 
@@ -39,119 +39,199 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
 
         // OCR
         group.addTask {
-            let r = try await RecognizeTextRequest().perform(on: cgImage)
-            return .ocr(parseOCR(r))
+            do {
+                let r = try await RecognizeTextRequest().perform(on: cgImage)
+                return .ocr(parseOCR(r))
+            } catch {
+                return .ocr([])
+            }
         }
         // Document segmentation (macOS 15+; use DetectDocumentSegmentation, not RecognizeDocuments)
         group.addTask {
-            let r = try await DetectDocumentSegmentationRequest().perform(on: cgImage)
-            return .documents(parseDocuments(r))
+            do {
+                let r = try await DetectDocumentSegmentationRequest().perform(on: cgImage)
+                return .documents(parseDocuments(r))
+            } catch {
+                return .documents([])
+            }
         }
         // Scene classification
         group.addTask {
-            let r = try await ClassifyImageRequest().perform(on: cgImage)
-            return .labels(parseLabels(r))
+            do {
+                let r = try await ClassifyImageRequest().perform(on: cgImage)
+                return .labels(parseLabels(r))
+            } catch {
+                return .labels([])
+            }
         }
         // Barcode
         group.addTask {
-            let r = try await DetectBarcodesRequest().perform(on: cgImage)
-            return .barcodes(parseBarcodes(r))
+            do {
+                let r = try await DetectBarcodesRequest().perform(on: cgImage)
+                return .barcodes(parseBarcodes(r))
+            } catch {
+                return .barcodes([])
+            }
         }
         // Face rectangles
         group.addTask {
-            let r = try await DetectFaceRectanglesRequest().perform(on: cgImage)
-            return .faceRects(r.map { $0.boundingBox.cgRect })
+            do {
+                let r = try await DetectFaceRectanglesRequest().perform(on: cgImage)
+                return .faceRects(r.map { $0.boundingBox.cgRect })
+            } catch {
+                return .faceRects([])
+            }
         }
         // Face landmarks
         group.addTask {
-            let r = try await DetectFaceLandmarksRequest().perform(on: cgImage)
-            return .faceLandmarks(r.compactMap { $0.landmarks })
+            do {
+                let r = try await DetectFaceLandmarksRequest().perform(on: cgImage)
+                return .faceLandmarks(r.compactMap { $0.landmarks })
+            } catch {
+                return .faceLandmarks([])
+            }
         }
         // Face capture quality
         group.addTask {
-            let r = try await DetectFaceCaptureQualityRequest().perform(on: cgImage)
-            return .faceQuality(r.compactMap { $0.captureQuality?.score })
+            do {
+                let r = try await DetectFaceCaptureQualityRequest().perform(on: cgImage)
+                return .faceQuality(r.compactMap { $0.captureQuality?.score })
+            } catch {
+                return .faceQuality([])
+            }
         }
         // Aesthetics
         group.addTask {
-            let r = try await CalculateImageAestheticsScoresRequest().perform(on: cgImage)
-            // API only provides overallScore and isUtility; blur/exposure not exposed.
-            let scores = AestheticsScores(
-                overall: r.overallScore,
-                blurScore: 0,
-                exposureScore: 0
-            )
-            return .aesthetics(scores)
+            do {
+                let r = try await CalculateImageAestheticsScoresRequest().perform(on: cgImage)
+                // API only provides overallScore and isUtility; blur/exposure not exposed.
+                let scores = AestheticsScores(
+                    overall: r.overallScore,
+                    blurScore: 0,
+                    exposureScore: 0
+                )
+                return .aesthetics(scores)
+            } catch {
+                return .aesthetics(AestheticsScores(overall: 0, blurScore: 0, exposureScore: 0))
+            }
         }
         // Lens smudge (macOS 26+)
         group.addTask {
-            try await detectLensSmudge(cgImage)
+            do {
+                return try await detectLensSmudge(cgImage)
+            } catch {
+                return .lensSmudge(LensSmudgeResult(hasSmudge: false, confidence: 0))
+            }
         }
         // Attention saliency
         group.addTask {
-            let r = try await GenerateAttentionBasedSaliencyImageRequest().perform(on: cgImage)
-            let box = r.salientObjects.first?.boundingBox.cgRect
-            return .attentionSaliency(SaliencyRegion(boundingBox: box, isAttentionBased: true))
+            do {
+                let r = try await GenerateAttentionBasedSaliencyImageRequest().perform(on: cgImage)
+                let box = r.salientObjects.first?.boundingBox.cgRect
+                return .attentionSaliency(SaliencyRegion(boundingBox: box, isAttentionBased: true))
+            } catch {
+                return .attentionSaliency(SaliencyRegion(boundingBox: nil, isAttentionBased: true))
+            }
         }
         // Objectness saliency
         group.addTask {
-            let r = try await GenerateObjectnessBasedSaliencyImageRequest().perform(on: cgImage)
-            let box = r.salientObjects.first?.boundingBox.cgRect
-            return .objectSaliency(SaliencyRegion(boundingBox: box, isAttentionBased: false))
+            do {
+                let r = try await GenerateObjectnessBasedSaliencyImageRequest().perform(on: cgImage)
+                let box = r.salientObjects.first?.boundingBox.cgRect
+                return .objectSaliency(SaliencyRegion(boundingBox: box, isAttentionBased: false))
+            } catch {
+                return .objectSaliency(SaliencyRegion(boundingBox: nil, isAttentionBased: false))
+            }
         }
         // Horizon
         group.addTask {
-            let r = try await DetectHorizonRequest().perform(on: cgImage)
-            // angle is Measurement<UnitAngle>; convert to radians via .value (default unit is radians)
-            return .horizon(r?.angle.value ?? 0)
+            do {
+                let r = try await DetectHorizonRequest().perform(on: cgImage)
+                // angle is Measurement<UnitAngle>; convert to radians via .value (default unit is radians)
+                return .horizon(r?.angle.value ?? 0)
+            } catch {
+                return .horizon(0)
+            }
         }
         // Rectangles
         group.addTask {
-            let r = try await DetectRectanglesRequest().perform(on: cgImage)
-            return .rectangles(r.map {
-                DetectedRectangle(boundingBox: $0.boundingBox.cgRect, confidence: $0.confidence)
-            })
+            do {
+                let r = try await DetectRectanglesRequest().perform(on: cgImage)
+                return .rectangles(r.map {
+                    DetectedRectangle(boundingBox: $0.boundingBox.cgRect, confidence: $0.confidence)
+                })
+            } catch {
+                return .rectangles([])
+            }
         }
         // Contours (new async API, macOS 15+)
         group.addTask {
-            let r = try await detectContours(cgImage)
-            return .contours(r)
+            do {
+                let r = try await detectContours(cgImage)
+                return .contours(r)
+            } catch {
+                return .contours([])
+            }
         }
         // Animals
         group.addTask {
-            let r = try await RecognizeAnimalsRequest().perform(on: cgImage)
-            return .animals(r.map { obs in
-                let identifier = obs.labels.first?.identifier ?? "unknown"
-                return DetectedAnimal(identifier: identifier, confidence: obs.confidence)
-            })
+            do {
+                let r = try await RecognizeAnimalsRequest().perform(on: cgImage)
+                return .animals(r.map { obs in
+                    let identifier = obs.labels.first?.identifier ?? "unknown"
+                    return DetectedAnimal(identifier: identifier, confidence: obs.confidence)
+                })
+            } catch {
+                return .animals([])
+            }
         }
         // Human body pose
         group.addTask {
-            let _ = try await DetectHumanBodyPoseRequest().perform(on: cgImage)
-            return .personMask
+            do {
+                let _ = try await DetectHumanBodyPoseRequest().perform(on: cgImage)
+                return .personMask(true)
+            } catch {
+                return .personMask(false)
+            }
         }
         // Human hand pose
         group.addTask {
-            let _ = try await DetectHumanHandPoseRequest().perform(on: cgImage)
-            return .personMask
+            do {
+                let _ = try await DetectHumanHandPoseRequest().perform(on: cgImage)
+                return .personMask(true)
+            } catch {
+                return .personMask(false)
+            }
         }
         // Image feature print
         group.addTask {
-            let r = try await GenerateImageFeaturePrintRequest().perform(on: cgImage)
-            var hasher = SHA256()
-            hasher.update(data: r.data)
-            let hash = hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
-            return .featureHash(hash)
+            do {
+                let r = try await GenerateImageFeaturePrintRequest().perform(on: cgImage)
+                var hasher = SHA256()
+                hasher.update(data: r.data)
+                let hash = hasher.finalize().compactMap { String(format: "%02x", $0) }.joined()
+                return .featureHash(hash)
+            } catch {
+                return .featureHash("")
+            }
         }
         // Person segmentation
         group.addTask {
-            let _ = try await GeneratePersonSegmentationRequest().perform(on: cgImage)
-            return .personMask
+            do {
+                let _ = try await GeneratePersonSegmentationRequest().perform(on: cgImage)
+                return .personMask(true)
+            } catch {
+                return .personMask(false)
+            }
         }
         // Foreground instance mask
         group.addTask {
-            let _ = try await GenerateForegroundInstanceMaskRequest().perform(on: cgImage)
-            return .personMask
+            do {
+                let _ = try await GenerateForegroundInstanceMaskRequest().perform(on: cgImage)
+                return .personMask(true)
+            } catch {
+                return .personMask(false)
+            }
         }
 
         // Collect results
@@ -203,7 +283,7 @@ func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageRepo
         case .rectangles(let v): rects = v
         case .contours(let v): contours = v
         case .animals(let v): animals = v
-        case .personMask: hasPersonMask = true
+        case .personMask(let v): if v { hasPersonMask = true }
         case .featureHash(let v): featureHash = v
         }
     }
