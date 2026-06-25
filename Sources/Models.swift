@@ -72,10 +72,33 @@ struct DetectedAnimal {
     let confidence: Float
 }
 
+struct Joint2D {
+    let name: String        // joint name e.g. "right_shoulder", "left_elbow"
+    let x: Float
+    let y: Float
+    let confidence: Float
+}
+
+struct Joint3D {
+    let name: String
+    let x: Float
+    let y: Float
+    let z: Float           // depth in meters
+    let confidence: Float
+}
+
+struct AnimalPoseInfo {
+    let identifier: String  // "Dog" / "Cat"
+    let joints: [Joint2D]
+    let confidence: Float
+}
+
 struct ImageReport: Report {
     let source: String
     let mediaType: MediaType = .image
 
+    let language: String                          // 🆕 detected language
+    let scene: String                             // 🆕 scene classification
     let ocrBlocks: [TextBlock]
     let documentRegions: [DocumentRegion]
     let labels: [DetectedLabel]
@@ -84,13 +107,17 @@ struct ImageReport: Report {
     let animals: [DetectedAnimal]
     let rectangles: [DetectedRectangle]
     let contours: [DetectedContour]
+    let textRectangles: [DetectedRectangle]       // 🆕 DetectTextRectanglesRequest
+    let bodyPoseJoints: [Joint2D]                // 🔧 was hasPersonMask
+    let bodyPose3DJoints: [Joint3D]              // 🆕 DetectHumanBodyPose3DRequest
+    let handPoseJoints: [Joint2D]                // 🔧 was hasPersonMask
+    let animalPose: [AnimalPoseInfo]             // 🆕 DetectAnimalBodyPoseRequest
     let horizonAngle: Double? = nil
     let aesthetics: AestheticsScores?
     let lensSmudge: LensSmudgeResult?
     let attentionSaliency: SaliencyRegion?
     let objectSaliency: SaliencyRegion?
-    let hasPersonMask: Bool
-    let humanRectangles: [DetectedRectangle]  // 🆕
+    let humanRectangles: [DetectedRectangle]
     let featurePrintHash: String?
 }
 
