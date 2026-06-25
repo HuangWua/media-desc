@@ -42,21 +42,8 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         of: VisionTaskResult.self
     ) { group in
 
-        // OCR (zh-Hans + en-US bilingual, .accurate)
-        group.addTask {
-            do {
-                var req = RecognizeTextRequest()
-                req.recognitionLanguages = [
-                    Locale.Language(identifier: "zh-Hans"),
-                    Locale.Language(identifier: "en-US")
-                ]
-                req.recognitionLevel = .accurate
-                let r = try await req.perform(on: cgImage)
-                return .ocr(parseOCR(r))
-            } catch {
-                return .ocr([])
-            }
-        }
+        // OCR moved OUT of TaskGroup — runs after collection
+        // (long images need textRects result before slicing)
         // Document recognition (macOS 26+)
         group.addTask {
             do {
@@ -257,9 +244,35 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         return collected
     }
 
-    // ── Post-process: OCR each detected document region ──
+    // ── OCR Phase (after TaskGroup, serial) ──
+    let ocrBlocks: [TextBlock]
+    if isLongImage(cgImage) {
+        var textRects: [DetectedRectangle] = []
+        for result in results {
+            if case .textRects(let rects) = result {
+                textRects = rects
+                break
+            }
+        }
+        do {
+            ocrBlocks = try await longImageOCR(cgImage, textRects)
+        } catch {
+            ocrBlocks = []
+        }
+    } else {
+        do {
+            ocrBlocks = try await singlePassOCR(cgImage)
+        } catch {
+            ocrBlocks = []
+        }
+    }
+
+    // Append OCR result
     var finalResults = results
-    for (index, result) in results.enumerated() {
+    finalResults.append(.ocr(ocrBlocks))
+
+    // ── Post-process: OCR each detected document region ──
+    for (index, result) in finalResults.enumerated() {
         guard case .documents(let docs) = result, !docs.isEmpty else { continue }
 
         let docsWithOCR: [DocumentRegion] = try await withThrowingTaskGroup(
