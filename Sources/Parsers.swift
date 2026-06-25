@@ -1,7 +1,7 @@
 import Vision
 import CoreGraphics
 
-// MARK: - Vision → Model Converters
+// MARK: - Legacy VN Type Parsers (macOS 15 fallback, unused by ImageAnalyzer but kept for completeness)
 
 func parseOCR(_ observations: [VNRecognizedTextObservation]) -> [TextBlock] {
     observations.map { obs in
@@ -12,6 +12,66 @@ func parseOCR(_ observations: [VNRecognizedTextObservation]) -> [TextBlock] {
         )
     }
 }
+
+// MARK: - New Async Vision Type Parsers (macOS 15+)
+
+func parseOCR(_ observations: [RecognizedTextObservation]) -> [TextBlock] {
+    observations.map { obs in
+        let text: String
+        if #available(macOS 26, *) {
+            text = obs.transcript
+        } else {
+            text = ""
+        }
+        return TextBlock(
+            string: text,
+            confidence: obs.confidence,
+            boundingBox: obs.boundingBox.cgRect
+        )
+    }
+}
+
+func parseDocuments(_ observation: DetectedDocumentObservation?) -> [DocumentRegion] {
+    guard let obs = observation else { return [] }
+    return [DocumentRegion(
+        boundingBox: obs.boundingBox.cgRect,
+        rows: []
+    )]
+}
+
+func parseLabels(_ observations: [ClassificationObservation]) -> [DetectedLabel] {
+    observations.map {
+        DetectedLabel(identifier: $0.identifier, confidence: $0.confidence)
+    }
+}
+
+func parseBarcodes(_ observations: [BarcodeObservation]) -> [DetectedBarcode] {
+    observations.compactMap { obs -> DetectedBarcode? in
+        guard let payload = obs.payloadString else { return nil }
+        return DetectedBarcode(
+            payload: payload,
+            symbology: String(describing: obs.symbology),
+            boundingBox: obs.boundingBox.cgRect
+        )
+    }
+}
+
+func assembleFaces(
+    _ rects: [CGRect],
+    _ landmarks: [FaceObservation.Landmarks2D],
+    _ qualities: [Float]
+) -> [DetectedFace] {
+    let maxCount = max(rects.count, landmarks.count, qualities.count)
+    return (0..<maxCount).map { i in
+        DetectedFace(
+            boundingBox: i < rects.count ? rects[i] : .zero,
+            hasLandmarks: i < landmarks.count,
+            quality: i < qualities.count ? qualities[i] : nil
+        )
+    }
+}
+
+// MARK: - Legacy VN Type Parsers (kept for compatibility)
 
 func parseDocuments(_ observations: [DetectedDocumentObservation]) -> [DocumentRegion] {
     observations.map { obs in
