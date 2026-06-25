@@ -408,3 +408,104 @@ func detectLensSmudge(_ cgImage: CGImage) async throws -> VisionTaskResult {
 }
 
 struct VisionUnavailableError: Error {}
+
+// MARK: - Long Image OCR Support
+
+/// Classify image as "long" needing sliced OCR.
+func isLongImage(_ cgImage: CGImage) -> Bool {
+    let h = CGFloat(cgImage.height)
+    let w = CGFloat(cgImage.width)
+    return h > 4000 || (w > 0 && h / w > 3)
+}
+
+/// Single-pass OCR (exact same logic as current TaskGroup OCR task).
+@available(macOS 26.0, *)
+func singlePassOCR(_ cgImage: CGImage) async throws -> [TextBlock] {
+    var req = RecognizeTextRequest()
+    req.recognitionLanguages = [
+        Locale.Language(identifier: "zh-Hans"),
+        Locale.Language(identifier: "en-US")
+    ]
+    req.recognitionLevel = .accurate
+    let r = try await req.perform(on: cgImage)
+    return parseOCR(r)
+}
+
+/// Crop a horizontal slice from CGImage at pixel Y (top-left origin).
+func cropSlicePixel(_ image: CGImage, yStart: CGFloat, yEnd: CGFloat) -> CGImage? {
+    let imgW = CGFloat(image.width)
+    let imgH = CGFloat(image.height)
+    let rect = CGRect(x: 0, y: yStart, width: imgW, height: yEnd - yStart)
+    let clamped = rect.integral.intersection(CGRect(x: 0, y: 0, width: imgW, height: imgH))
+    guard clamped.width > 0, clamped.height > 0 else { return nil }
+    return image.cropping(to: clamped)
+}
+
+/// Compute safe slice boundaries from text region distribution.
+/// Returns array of (yStart, yEnd) pixel tuples, or nil if fallback needed.
+func gapAnalysis(
+    _ textRects: [DetectedRectangle],
+    imageHeight: CGFloat,
+    targetSliceHeight: CGFloat = 3000
+) -> [(yStart: CGFloat, yEnd: CGFloat)]? {
+    guard !textRects.isEmpty else { return nil }
+
+    // Convert to pixel coords (Vision normalized → top-left pixel)
+    // Vision: y=0 bottom, y=1 top. Pixel: y=0 top, y=height bottom.
+    let pixelRects: [(minY: CGFloat, maxY: CGFloat)] = textRects.map { r in
+        let normY = r.boundingBox.origin.y
+        let normH = r.boundingBox.height
+        let topPixel = (1.0 - normY - normH) * imageHeight   // top of rect in pixels
+        let bottomPixel = (1.0 - normY) * imageHeight         // bottom of rect in pixels
+        return (max(0, topPixel), min(imageHeight, bottomPixel))
+    }.sorted { $0.minY < $1.minY }
+
+    // Coverage check: last rect must reach at least 30% down the image
+    if let lastMaxY = pixelRects.last?.maxY, lastMaxY < imageHeight * 0.30 {
+        return nil
+    }
+
+    // Median line height
+    let heights = pixelRects.map { $0.maxY - $0.minY }.sorted()
+    let lineH = heights.isEmpty ? 20 : heights[heights.count / 2]
+    let gapThreshold = lineH * 2.0
+
+    // Find safe cut points (midpoints of gaps >= gapThreshold)
+    var safeCutYs: [CGFloat] = []
+    for i in 0..<(pixelRects.count - 1) {
+        let gap = pixelRects[i+1].minY - pixelRects[i].maxY
+        if gap >= gapThreshold {
+            safeCutYs.append(pixelRects[i].maxY + gap / 2.0)
+        }
+    }
+
+    // If no safe gaps found, fallback
+    guard !safeCutYs.isEmpty else { return nil }
+
+    // Build slices: cut at safeCutYs. Only merge slices smaller than 1500px.
+    var slices: [(CGFloat, CGFloat)] = []
+    var sliceStart: CGFloat = 0
+    let minSliceHeight: CGFloat = 1500
+
+    for cutY in safeCutYs {
+        if cutY - sliceStart < minSliceHeight { continue } // too small, merge
+        slices.append((sliceStart, cutY))
+        sliceStart = cutY
+    }
+    // Final slice to bottom
+    if sliceStart < imageHeight {
+        slices.append((sliceStart, imageHeight))
+    }
+
+    // Add 5% padding on both sides of each slice (but clamp to [0, imageHeight])
+    var paddedSlices: [(CGFloat, CGFloat)] = []
+    for (start, end) in slices {
+        let sliceH = end - start
+        let pad = sliceH * 0.05
+        let paddedStart = max(0, start - pad)
+        let paddedEnd = min(imageHeight, end + pad)
+        paddedSlices.append((paddedStart, paddedEnd))
+    }
+
+    return paddedSlices.isEmpty ? nil : paddedSlices
+}
