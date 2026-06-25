@@ -6,7 +6,7 @@ import CoreGraphics
 
 // ── 文字/文档 ──
 
-@available(macOS 26, *)
+@available(macOS 26.0, *)
 func parseOCR(_ observations: [RecognizedTextObservation]) -> [TextBlock] {
     observations.map { obs in
         TextBlock(
@@ -17,7 +17,7 @@ func parseOCR(_ observations: [RecognizedTextObservation]) -> [TextBlock] {
     }
 }
 
-@available(macOS 26, *)
+@available(macOS 26.0, *)
 func parseDocuments(_ observations: [DocumentObservation]) -> [DocumentRegion] {
     observations.map { doc in
         let rows: [[String]] = doc.document.tables.flatMap { table in
@@ -137,7 +137,7 @@ func parseHumanRects(_ observations: [HumanObservation]) -> [DetectedRectangle] 
 // MARK: - Document Region OCR
 
 /// Run OCR on a cropped document region and parse results into rows of text.
-@available(macOS 26, *)
+@available(macOS 26.0, *)
 func parseDocumentOCR(_ observations: [RecognizedTextObservation]) -> [[String]] {
     let blocks: [(text: String, centerY: CGFloat, minX: CGFloat, lineHeight: CGFloat)] = observations.compactMap { obs in
         let text = obs.transcript

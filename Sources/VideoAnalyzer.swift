@@ -102,7 +102,7 @@ func extractKeyframes(_ asset: AVAsset, maxFrames: Int) async throws -> [(TimeIn
 
 // MARK: - Single Frame Analysis
 
-@available(macOS 26, *)
+@available(macOS 26.0, *)
 func analyzeFrame(timestamp: TimeInterval, image: CGImage) async -> FrameSnapshot {
     // Start OCR + classification concurrently; saliency runs inline (avoids type-inference compiler crash)
     async let ocr = try? RecognizeTextRequest().perform(on: image)
@@ -126,27 +126,6 @@ func analyzeFrame(timestamp: TimeInterval, image: CGImage) async -> FrameSnapsho
             SaliencyRegion(boundingBox: $0, isAttentionBased: true)
         }
     )
-}
-
-// MARK: - Scene Change Detection
-
-func detectSceneChanges(_ snapshots: [FrameSnapshot]) -> [SceneTransition] {
-    guard snapshots.count > 1 else { return [] }
-    var changes: [SceneTransition] = []
-    for i in 1..<snapshots.count {
-        let prev = snapshots[i-1].labels.first
-        let curr = snapshots[i].labels.first
-        if let p = prev, let c = curr,
-           p.identifier != c.identifier,
-           p.confidence > 0.5, c.confidence > 0.5 {
-            changes.append(SceneTransition(
-                at: snapshots[i].timestamp,
-                fromLabel: p.identifier,
-                toLabel: c.identifier
-            ))
-        }
-    }
-    return changes
 }
 
 // MARK: - Optical Flow Scene Detection (macOS 26+)
@@ -191,6 +170,7 @@ func detectSceneChangesOpticalFlow(_ frameImages: [(TimeInterval, CGImage)]) asy
     return changes
 }
 
+@available(macOS 26.0, *)
 func computeGlobalMotion(_ flow: OpticalFlowObservation) -> Float {
     // Compute mean displacement magnitude by sampling flow vectors
     // across a normalized 8x8 grid using the flow(at:) query API.
@@ -234,16 +214,17 @@ func detectTrajectories(_ frameImages: [(TimeInterval, CGImage)]) async -> [Traj
     return trajectories
 }
 
+@available(macOS 26.0, *)
 func describeTrajectory(_ obs: TrajectoryObservation) -> String {
     // Describe parabolic trajectory in human terms.
-    // The observation contains the detected motion path.
     let coeffs = obs.equationCoefficients
     if coeffs != .zero {
-        return "parabolic motion (coefficients: 3)"
+        return "parabolic motion (\(coeffs.scalarCount) coefficients)"
     }
     return "motion detected"
 }
 
+@available(macOS 26.0, *)
 func formatOpticalFlowSummary(_ changes: [SceneTransition]) -> String? {
     guard !changes.isEmpty else { return "No significant scene changes detected." }
     return changes.map { c in

@@ -28,7 +28,7 @@ enum VisionTaskResult {
 
 // MARK: - Public API
 
-@available(macOS 26, *)
+@available(macOS 26.0, *)
 func analyzeImage(_ path: String) async throws -> ImageReport {
     guard let cgImage = loadCGImage(path) else {
         throw MediaError.badImage(path)
