@@ -14,7 +14,8 @@ func renderReport(_ report: any Report) -> String {
 
 func renderImage(_ r: ImageReport) -> String {
     var out = ""
-    out += "## 📷 Image: \(r.source)\n\n"
+    out += "## 📷 Image: \(r.source)\n"
+    out += "Language: \(r.language) | Scene: \(r.scene)\n\n"
 
     // OCR
     if !r.ocrBlocks.isEmpty {
@@ -54,6 +55,17 @@ func renderImage(_ r: ImageReport) -> String {
         }
     }
 
+    // Text Regions (from DetectTextRectanglesRequest)
+    if r.scene == "document" || r.scene == "generic" {
+        if !r.textRectangles.isEmpty {
+            out += "### Text Regions — \(r.textRectangles.count) regions\n"
+            for (i, rect) in r.textRectangles.enumerated() {
+                out += "- region \(i + 1): (\(String(format: "%.2f", rect.boundingBox.origin.x)), \(String(format: "%.2f", rect.boundingBox.origin.y)), \(String(format: "%.2f", rect.boundingBox.width)), \(String(format: "%.2f", rect.boundingBox.height)))\n"
+            }
+            out += "\n"
+        }
+    }
+
     // Classification
     if !r.labels.isEmpty {
         out += "### Scene Classification\n"
@@ -70,6 +82,77 @@ func renderImage(_ r: ImageReport) -> String {
         out += "### Faces\n\(r.faces.count) face(s) detected\n\n"
     } else {
         out += "### Faces\nNone detected.\n\n"
+    }
+
+    // Human Rectangles
+    if r.scene == "people" || r.scene == "generic" {
+        if !r.humanRectangles.isEmpty {
+            out += "### Human Rectangles\n\(r.humanRectangles.count) person(s) detected\n\n"
+        } else if r.scene == "people" {
+            out += "### Human Rectangles\nNone detected.\n\n"
+        }
+    } else {
+        out += "### Human Rectangles\n- Skipped (document scene)\n\n"
+    }
+
+    // Body Pose 2D
+    if r.scene == "people" || r.scene == "generic" {
+        if !r.bodyPoseJoints.isEmpty {
+            out += "### Human Body Pose (2D) — \(r.bodyPoseJoints.count) joints\n"
+            for j in r.bodyPoseJoints {
+                out += "- \(j.name): (\(String(format: "%.2f", j.x)), \(String(format: "%.2f", j.y))) conf: \(String(format: "%.2f", j.confidence))\n"
+            }
+            out += "\n"
+        } else {
+            out += "### Human Body Pose (2D)\nNo pose detected.\n\n"
+        }
+    } else {
+        out += "### Human Body Pose (2D)\n- Skipped (document scene)\n\n"
+    }
+
+    // Body Pose 3D
+    if r.scene == "people" || r.scene == "generic" {
+        if !r.bodyPose3DJoints.isEmpty {
+            out += "### Human Body Pose (3D) — \(r.bodyPose3DJoints.count) joints\n"
+            for j in r.bodyPose3DJoints {
+                out += "- \(j.name): (\(String(format: "%.2f", j.x)), \(String(format: "%.2f", j.y)), z=\(String(format: "%.2f", j.z))) conf: \(String(format: "%.2f", j.confidence))\n"
+            }
+            out += "\n"
+        } else {
+            out += "### Human Body Pose (3D)\nNo 3D pose detected.\n\n"
+        }
+    } else {
+        out += "### Human Body Pose (3D)\n- Skipped (document scene)\n\n"
+    }
+
+    // Hand Pose (🔧 was never rendered before)
+    if r.scene == "people" || r.scene == "generic" {
+        if !r.handPoseJoints.isEmpty {
+            out += "### Hand Pose — \(r.handPoseJoints.count) joints\n"
+            for j in r.handPoseJoints {
+                out += "- \(j.name): (\(String(format: "%.2f", j.x)), \(String(format: "%.2f", j.y))) conf: \(String(format: "%.2f", j.confidence))\n"
+            }
+            out += "\n"
+        } else {
+            out += "### Hand Pose\nNo hand detected.\n\n"
+        }
+    } else {
+        out += "### Hand Pose\n- Skipped (document scene)\n\n"
+    }
+
+    // Animal Pose
+    if r.scene == "people" || r.scene == "generic" {
+        if !r.animalPose.isEmpty {
+            out += "### Animal Pose\n"
+            for a in r.animalPose {
+                out += "- \(a.identifier): \(a.joints.count) joints, confidence \(String(format: "%.2f", a.confidence))\n"
+            }
+            out += "\n"
+        } else {
+            out += "### Animal Pose\nNo animal pose detected.\n\n"
+        }
+    } else {
+        out += "### Animal Pose\n- Skipped (document scene)\n\n"
     }
 
     // Barcodes
