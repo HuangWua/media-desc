@@ -534,7 +534,7 @@ func mergeSlicedOCR(_ slices: [(yStart: CGFloat, yEnd: CGFloat, blocks: [TextBlo
                     x: box.origin.x,
                     y: originalY,
                     width: box.width,
-                    height: normH
+                    height: normH * croppedH
                 )
             } else {
                 originalRect = nil
