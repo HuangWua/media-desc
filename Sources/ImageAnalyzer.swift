@@ -38,18 +38,18 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         throw MediaError.badImage(path)
     }
 
-    // Detect language for OCR configuration
-    let lang = await detectImageLanguage(cgImage)
-
     let results: [VisionTaskResult] = try await withThrowingTaskGroup(
         of: VisionTaskResult.self
     ) { group in
 
-        // OCR (language-aware, .accurate)
+        // OCR (zh-Hans + en-US bilingual, .accurate)
         group.addTask {
             do {
                 var req = RecognizeTextRequest()
-                req.recognitionLanguages = lang.visionLanguages
+                req.recognitionLanguages = [
+                    Locale.Language(identifier: "zh-Hans"),
+                    Locale.Language(identifier: "en-US")
+                ]
                 req.recognitionLevel = .accurate
                 let r = try await req.perform(on: cgImage)
                 return .ocr(parseOCR(r))
@@ -293,12 +293,12 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         finalResults[index] = .documents(docsWithOCR)
     }
 
-    return assembleImageReport(path: path, lang: lang, results: finalResults)
+    return assembleImageReport(path: path, results: finalResults)
 }
 
 // MARK: - Result Assembly (pure function)
 
-func assembleImageReport(path: String, lang: (code: String, visionLanguages: [Locale.Language]), results: [VisionTaskResult]) -> ImageReport {
+func assembleImageReport(path: String, results: [VisionTaskResult]) -> ImageReport {
     var ocr: [TextBlock] = []
     var docs: [DocumentRegion] = []
     var labels: [DetectedLabel] = []
@@ -322,6 +322,10 @@ func assembleImageReport(path: String, lang: (code: String, visionLanguages: [Lo
     var animalPose: [AnimalPoseInfo] = []
 
     let scene = deriveSceneTag(labels)
+
+    // Language from OCR text (free — no extra API call)
+    let ocrSample = ocr.prefix(5).map(\.string).joined()
+    let langCode = detectLanguage(ocrSample)
 
     for r in results {
         switch r {
@@ -351,7 +355,7 @@ func assembleImageReport(path: String, lang: (code: String, visionLanguages: [Lo
 
     return ImageReport(
         source: URL(fileURLWithPath: path).lastPathComponent,
-        language: lang.code,
+        language: langCode,
         scene: scene,
         ocrBlocks: ocr,
         documentRegions: docs,
