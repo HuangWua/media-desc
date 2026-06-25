@@ -86,3 +86,32 @@ func detectImageLanguage(_ cgImage: CGImage) async -> (code: String, visionLangu
         ])
     }
 }
+
+// MARK: - String Distance
+
+/// Levenshtein distance between two strings. Returns normalized similarity in [0.0, 1.0].
+/// 1.0 = identical, 0.0 = completely different.
+func levenshteinSimilarity(_ s1: String, _ s2: String) -> Double {
+    let a = Array(s1), b = Array(s2)
+    let n = a.count, m = b.count
+    guard max(n, m) > 0 else { return 1.0 }
+    guard n > 0 else { return 0.0 }
+    guard m > 0 else { return 0.0 }
+
+    var prev = Array(0...m)
+    var curr = Array(repeating: 0, count: m + 1)
+
+    for i in 1...n {
+        curr[0] = i
+        for j in 1...m {
+            if a[i-1] == b[j-1] {
+                curr[j] = prev[j-1]
+            } else {
+                curr[j] = 1 + min(prev[j], min(curr[j-1], prev[j-1]))
+            }
+        }
+        swap(&prev, &curr)
+    }
+
+    return 1.0 - Double(prev[m]) / Double(max(n, m))
+}
