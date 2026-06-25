@@ -509,3 +509,109 @@ func gapAnalysis(
 
     return paddedSlices.isEmpty ? nil : paddedSlices
 }
+
+/// Merge OCR results from multiple slices: remap Y to original image space, dedup overlapping blocks.
+func mergeSlicedOCR(_ slices: [(yStart: CGFloat, blocks: [TextBlock])]) -> [TextBlock] {
+    // Remap each block's Y coordinate to original image space
+    var allBlocks: [TextBlock] = []
+    for (yStart, blocks) in slices {
+        for block in blocks {
+            let originalY = (block.boundingBox?.origin.y ?? 0) + yStart
+            let originalRect: CGRect?
+            if let box = block.boundingBox {
+                originalRect = CGRect(
+                    x: box.origin.x,
+                    y: originalY,
+                    width: box.width,
+                    height: box.height
+                )
+            } else {
+                originalRect = nil
+            }
+            allBlocks.append(TextBlock(
+                string: block.string,
+                confidence: block.confidence,
+                boundingBox: originalRect
+            ))
+        }
+    }
+
+    // Sort by Y
+    let sorted = allBlocks.sorted { ($0.boundingBox?.origin.y ?? 0) < ($1.boundingBox?.origin.y ?? 0) }
+
+    // Dedup: if two adjacent blocks have Y diff < 3px and string similarity > 0.6, keep higher confidence
+    guard sorted.count > 1 else { return sorted }
+
+    var deduped: [TextBlock] = [sorted[0]]
+    for i in 1..<sorted.count {
+        let prev = deduped.last!
+        let curr = sorted[i]
+        let prevY = prev.boundingBox?.origin.y ?? 0
+        let currY = curr.boundingBox?.origin.y ?? 0
+
+        if abs(currY - prevY) < 3 && levenshteinSimilarity(prev.string, curr.string) > 0.6 {
+            // Duplicate: keep the one with higher confidence
+            if curr.confidence > prev.confidence {
+                deduped[deduped.count - 1] = curr
+            }
+        } else {
+            deduped.append(curr)
+        }
+    }
+
+    return deduped
+}
+
+/// Fixed-height slicing fallback: 3000px slices with 20% overlap.
+@available(macOS 26.0, *)
+func fixedHeightOCR(_ cgImage: CGImage) async throws -> [TextBlock] {
+    let imgH = CGFloat(cgImage.height)
+    let sliceHeight: CGFloat = 3000
+    let overlapRatio: CGFloat = 0.20
+    let step = sliceHeight * (1.0 - overlapRatio)
+
+    var slices: [(CGFloat, [TextBlock])] = []
+    var y: CGFloat = 0
+
+    while y < imgH {
+        let yEnd = min(y + sliceHeight, imgH)
+        if let cropped = cropSlicePixel(cgImage, yStart: y, yEnd: yEnd) {
+            do {
+                let blocks = try await singlePassOCR(cropped)
+                slices.append((y, blocks))
+            } catch {
+                // Skip failed slice, continue
+            }
+        }
+        y += step
+    }
+
+    return mergeSlicedOCR(slices)
+}
+
+/// Long-image OCR orchestrator: gap-guided slicing with fixed-height fallback.
+@available(macOS 26.0, *)
+func longImageOCR(_ cgImage: CGImage, _ textRects: [DetectedRectangle]) async throws -> [TextBlock] {
+    let imgH = CGFloat(cgImage.height)
+
+    // Phase 1: Try gap-guided slicing
+    if let sliceBounds = gapAnalysis(textRects, imageHeight: imgH) {
+        var slices: [(CGFloat, [TextBlock])] = []
+        for (yStart, yEnd) in sliceBounds {
+            if let cropped = cropSlicePixel(cgImage, yStart: yStart, yEnd: yEnd) {
+                do {
+                    let blocks = try await singlePassOCR(cropped)
+                    slices.append((yStart, blocks))
+                } catch {
+                    // Skip failed slice
+                }
+            }
+        }
+        if !slices.isEmpty {
+            return mergeSlicedOCR(slices)
+        }
+    }
+
+    // Phase 2: Fallback — fixed-height slicing
+    return try await fixedHeightOCR(cgImage)
+}
