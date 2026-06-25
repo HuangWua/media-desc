@@ -63,10 +63,15 @@ func analyzeVideo(_ path: String) async throws -> VideoReport {
     let changes = await detectSceneChangesOpticalFlow(frameImages)
     let trajectories = await detectTrajectories(frameImages)
 
+    // Phase 4: detect visual language from frame OCR text
+    let frameText = snapshots.prefix(10).flatMap { $0.ocrBlocks.prefix(5).map(\.string) }.joined()
+    let visualLanguage = detectLanguage(frameText)
+
     return VideoReport(
         source: url.lastPathComponent,
         duration: duration,
         language: detectLanguage(transcript.map(\.text).joined()),
+        visualLanguage: visualLanguage,
         transcript: transcript,
         frames: snapshots,
         sceneChanges: changes,

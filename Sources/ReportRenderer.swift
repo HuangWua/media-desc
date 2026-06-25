@@ -218,8 +218,7 @@ func renderVideo(_ r: VideoReport) -> String {
     let mins = Int(r.duration) / 60
     let secs = Int(r.duration) % 60
     out += "Duration: \(String(format: "%02d:%02d", mins, secs))"
-    out += " | Language: \(r.language)"
-    out += " | Audio: \(r.soundType.rawValue)\n\n"
+    out += " | Language: \(r.language) | Visual: \(r.visualLanguage) | Audio: \(r.soundType.rawValue)\n\n"
 
     if !r.transcript.isEmpty {
         let avgConf = r.transcript.map(\.confidence).reduce(0, +) / Float(r.transcript.count)

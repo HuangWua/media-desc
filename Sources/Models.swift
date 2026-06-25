@@ -160,6 +160,7 @@ struct VideoReport: Report {
 
     let duration: TimeInterval
     let language: String
+    let visualLanguage: String         // 🆕 from frame OCR text
     let transcript: [TranscriptSegment]
     let frames: [FrameSnapshot]
     let sceneChanges: [SceneTransition]
