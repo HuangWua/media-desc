@@ -41,6 +41,19 @@ func renderImage(_ r: ImageReport) -> String {
         }
     }
 
+    // Document Tables (from RecognizeDocumentsRequest)
+    let docsWithTables = r.documentRegions.filter { !$0.rows.isEmpty }
+    if !docsWithTables.isEmpty {
+        out += "### Document Tables\n"
+        for (i, doc) in docsWithTables.enumerated() {
+            out += "Table \(i + 1):\n\n"
+            for row in doc.rows {
+                out += "| " + row.joined(separator: " | ") + " |\n"
+            }
+            out += "\n"
+        }
+    }
+
     // Classification
     if !r.labels.isEmpty {
         out += "### Scene Classification\n"
@@ -94,11 +107,6 @@ func renderImage(_ r: ImageReport) -> String {
         out += "- Lens smudge: \(s.hasSmudge ? "DETECTED (confidence \(String(format: "%.2f", s.confidence)))" : "none detected")\n"
     } else {
         out += "- Lens smudge: (unavailable)\n"
-    }
-    if let h = r.horizonAngle {
-        out += "- Horizon: \(String(format: "%.1f", abs(h)))° \(h < 0 ? "counter-clockwise" : "clockwise")\n"
-    } else {
-        out += "- Horizon: (unavailable)\n"
     }
     out += "\n"
 
@@ -163,6 +171,18 @@ func renderVideo(_ r: VideoReport) -> String {
         }
         out += parts.joined(separator: " > ")
         out += "\n"
+    }
+
+    if !r.trajectories.isEmpty {
+        out += "### Motion Trajectories\n"
+        for t in r.trajectories {
+            out += "- [\(String(format: "%.0f", t.startTime))-\(String(format: "%.0f", t.startTime + t.duration))s] \(t.description) (confidence: \(String(format: "%.2f", t.confidence)))\n"
+        }
+        out += "\n"
+    }
+
+    if let flow = r.opticalFlowSummary {
+        out += "### Scene Changes (Optical Flow)\n\(flow)\n\n"
     }
 
     return out
