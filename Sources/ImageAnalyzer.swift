@@ -104,7 +104,9 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         group.addTask {
             do {
                 let r = try await CalculateImageAestheticsScoresRequest().perform(on: cgImage)
-                // API only provides overallScore and isUtility; blur/exposure not exposed.
+                // macOS 26.5 SDK: CalculateImageAestheticsScoresRequest returns
+                // ImageAestheticsScoresObservation with overallScore (Float) and isUtility (Bool).
+                // blur/exposure sub-scores are not exposed in the public API — set to 0.
                 let scores = AestheticsScores(
                     overall: r.overallScore,
                     blurScore: 0,
@@ -351,7 +353,7 @@ func detectLensSmudge(_ cgImage: CGImage) async throws -> VisionTaskResult {
         let r = try await DetectLensSmudgeRequest().perform(on: cgImage)
         // SmudgeObservation has confidence but no explicit hasSmudge boolean.
         // Infer: any detection with confidence > 0 indicates smudge presence.
-        let hasSmudge = r.confidence > 0
+        let hasSmudge = r.confidence > 0.5
         return .lensSmudge(LensSmudgeResult(hasSmudge: hasSmudge, confidence: r.confidence))
     }
     throw VisionUnavailableError()
@@ -360,7 +362,9 @@ func detectLensSmudge(_ cgImage: CGImage) async throws -> VisionTaskResult {
 func detectContours(_ cgImage: CGImage) async throws -> [DetectedContour] {
     // Use new async DetectContoursRequest (macOS 15+), which returns ContoursObservation.
     let r = try await DetectContoursRequest().perform(on: cgImage)
-    return r.topLevelContours.map { contour in
+    var result: [DetectedContour] = []
+    for contour in r.topLevelContours {
+        guard !contour.normalizedPoints.isEmpty else { continue }
         // Compute bounding box from normalized points array
         var minX: Float = 1.0, minY: Float = 1.0, maxX: Float = 0.0, maxY: Float = 0.0
         for pt in contour.normalizedPoints {
@@ -373,8 +377,9 @@ func detectContours(_ cgImage: CGImage) async throws -> [DetectedContour] {
             x: CGFloat(minX), y: CGFloat(minY),
             width: CGFloat(maxX - minX), height: CGFloat(maxY - minY)
         )
-        return DetectedContour(boundingBox: cgRect, pointCount: contour.pointCount)
+        result.append(DetectedContour(boundingBox: cgRect, pointCount: contour.pointCount))
     }
+    return result
 }
 
 struct VisionUnavailableError: Error {}
