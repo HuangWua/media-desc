@@ -36,13 +36,12 @@ func analyzeVideo(_ path: String) async throws -> VideoReport {
 
     let transcript: [TranscriptSegment]
     let soundType: SoundType
-    if let track = try await asset.loadTracks(withMediaType: .audio).first {
+    if let track = try? await asset.loadTracks(withMediaType: .audio).first {
         do {
             try await exportAudioTrack(track, to: tempURL)
             defer { try? FileManager.default.removeItem(at: tempURL) }
             (transcript, soundType) = try await analyzeSpeechFile(tempURL)
         } catch {
-            try? FileManager.default.removeItem(at: tempURL)
             (transcript, soundType) = ([], .unknown)
         }
     } else {
