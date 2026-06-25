@@ -169,3 +169,89 @@ func parseDocumentOCR(_ observations: [RecognizedTextObservation]) -> [[String]]
 
     return rows
 }
+
+// MARK: - Text Rectangles
+
+func parseTextRects(_ observations: [TextObservation]) -> [DetectedRectangle] {
+    observations.map {
+        DetectedRectangle(
+            boundingBox: $0.boundingBox.cgRect,
+            confidence: $0.confidence
+        )
+    }
+}
+
+// MARK: - Human Body Pose (2D)
+
+func parseBodyPose2D(_ observations: [HumanBodyPoseObservation]) -> [Joint2D] {
+    observations.flatMap { obs in
+        obs.availableJointNames.compactMap { jointName in
+            guard let joint = obs.joint(for: jointName),
+                  joint.confidence > 0 else { return nil }
+            return Joint2D(
+                name: jointName.rawValue,
+                x: Float(joint.location.cgPoint.x),
+                y: Float(joint.location.cgPoint.y),
+                confidence: joint.confidence
+            )
+        }
+    }
+}
+
+// MARK: - Human Body Pose (3D)
+
+func parseBodyPose3D(_ observations: [HumanBodyPose3DObservation]) -> [Joint3D] {
+    observations.flatMap { obs in
+        obs.availableJointNames.compactMap { jointName in
+            guard let joint = obs.joint(for: jointName) else { return nil }
+            let pos = joint.position
+            return Joint3D(
+                name: jointName.rawValue,
+                x: pos.columns.3.x,
+                y: pos.columns.3.y,
+                z: pos.columns.3.z,
+                confidence: obs.confidence
+            )
+        }
+    }
+}
+
+// MARK: - Hand Pose
+
+func parseHandPose(_ observations: [HumanHandPoseObservation]) -> [Joint2D] {
+    observations.flatMap { obs in
+        obs.availableJointNames.compactMap { jointName in
+            guard let joint = obs.joint(for: jointName),
+                  joint.confidence > 0 else { return nil }
+            return Joint2D(
+                name: jointName.rawValue,
+                x: Float(joint.location.cgPoint.x),
+                y: Float(joint.location.cgPoint.y),
+                confidence: joint.confidence
+            )
+        }
+    }
+}
+
+// MARK: - Animal Body Pose
+
+func parseAnimalPose(_ observations: [AnimalBodyPoseObservation]) -> [AnimalPoseInfo] {
+    observations.compactMap { obs in
+        let joints: [Joint2D] = obs.availableJointNames.compactMap { jointName in
+            guard let joint = obs.joint(for: jointName),
+                  joint.confidence > 0 else { return nil }
+            return Joint2D(
+                name: jointName.rawValue,
+                x: Float(joint.location.cgPoint.x),
+                y: Float(joint.location.cgPoint.y),
+                confidence: joint.confidence
+            )
+        }
+        guard !joints.isEmpty else { return nil }
+        return AnimalPoseInfo(
+            identifier: "animal",
+            joints: joints,
+            confidence: obs.confidence
+        )
+    }
+}
