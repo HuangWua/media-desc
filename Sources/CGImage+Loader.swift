@@ -24,3 +24,23 @@ func loadCGImage(_ path: String) -> CGImage? {
 
     return nil
 }
+
+/// Crop a CGImage to a Vision normalized bounding box (origin bottom-left, range 0-1).
+/// Returns nil if the resulting crop would be empty or out of bounds.
+func cropCGImage(_ image: CGImage, to normalizedRect: CGRect) -> CGImage? {
+    let imgWidth = CGFloat(image.width)
+    let imgHeight = CGFloat(image.height)
+
+    // Vision coords (bottom-left origin) → CGImage pixel coords (top-left origin)
+    let pixelX = normalizedRect.origin.x * imgWidth
+    let pixelY = (1.0 - normalizedRect.origin.y - normalizedRect.size.height) * imgHeight
+    let pixelWidth = normalizedRect.size.width * imgWidth
+    let pixelHeight = normalizedRect.size.height * imgHeight
+
+    let pixelRect = CGRect(x: pixelX, y: pixelY, width: pixelWidth, height: pixelHeight)
+    let clamped = pixelRect.integral.intersection(
+        CGRect(x: 0, y: 0, width: imgWidth, height: imgHeight)
+    )
+    guard clamped.width > 0, clamped.height > 0 else { return nil }
+    return image.cropping(to: clamped)
+}

@@ -1,6 +1,6 @@
 import AVFoundation
 import Vision
-import Speech
+@preconcurrency import Speech
 import CoreGraphics
 
 // MARK: - Tuning
@@ -17,6 +17,7 @@ func keyframeInterval(duration: TimeInterval) -> TimeInterval {
 
 // MARK: - Public API
 
+@available(macOS 26.0, *)
 func analyzeVideo(_ path: String) async throws -> VideoReport {
     let url = URL(fileURLWithPath: path)
     let asset = AVURLAsset(url: url)
@@ -26,13 +27,31 @@ func analyzeVideo(_ path: String) async throws -> VideoReport {
     }
     let duration = try await asset.load(.duration).seconds
 
-    // Phase 1: keyframes + audio transcription in parallel
+    // Phase 1: keyframes + audio export + speech analysis
     async let frames = extractKeyframes(asset, maxFrames: kVideoMaxKeyframes)
-    async let segments = transcribeAVAsset(asset)
 
-    let (frameImages, transcript) = try await (frames, segments)
+    let tempURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathExtension("wav")
 
-    // Phase 2: per-frame Vision analysis
+    let transcript: [TranscriptSegment]
+    let soundType: SoundType
+    if let track = try await asset.loadTracks(withMediaType: .audio).first {
+        do {
+            try await exportAudioTrack(track, to: tempURL)
+            defer { try? FileManager.default.removeItem(at: tempURL) }
+            (transcript, soundType) = try await analyzeSpeechFile(tempURL)
+        } catch {
+            try? FileManager.default.removeItem(at: tempURL)
+            (transcript, soundType) = ([], .unknown)
+        }
+    } else {
+        (transcript, soundType) = ([], .unknown)
+    }
+
+    let frameImages = try await frames
+
+    // Phase 2: per-frame Vision analysis (unchanged)
     let snapshots = await withTaskGroup(of: FrameSnapshot.self) { group in
         for (ts, img) in frameImages {
             group.addTask { await analyzeFrame(timestamp: ts, image: img) }
@@ -41,11 +60,8 @@ func analyzeVideo(_ path: String) async throws -> VideoReport {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
-    // Phase 3: scene change detection
+    // Phase 3: scene change detection (unchanged)
     let changes = detectSceneChanges(snapshots)
-
-    // Sound classification
-    let sound = (try? await classifySound(asset)) ?? .unknown
 
     return VideoReport(
         source: url.lastPathComponent,
@@ -54,7 +70,7 @@ func analyzeVideo(_ path: String) async throws -> VideoReport {
         transcript: transcript,
         frames: snapshots,
         sceneChanges: changes,
-        soundType: sound
+        soundType: soundType
     )
 }
 
@@ -130,36 +146,6 @@ func detectSceneChanges(_ snapshots: [FrameSnapshot]) -> [SceneTransition] {
     return changes
 }
 
-// MARK: - Sound Classification
-
-func classifySound(_ asset: AVAsset) async throws -> SoundType {
-    if let _ = try? await asset.loadTracks(withMediaType: .audio).first {
-        return .speech
-    }
-    return .unknown
-}
-
-// MARK: - Speech Transcription (AVAsset)
-
-func transcribeAVAsset(_ asset: AVAsset) async throws -> [TranscriptSegment] {
-    let tempURL = FileManager.default.temporaryDirectory
-        .appendingPathComponent(UUID().uuidString)
-        .appendingPathExtension("wav")
-
-    guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
-        return []
-    }
-
-    do {
-        try await exportAudioTrack(track, to: tempURL)
-        defer { try? FileManager.default.removeItem(at: tempURL) }
-        return try await transcribeFile(tempURL)
-    } catch {
-        try? FileManager.default.removeItem(at: tempURL)
-        throw error
-    }
-}
-
 // MARK: - Audio Track Export
 
 func exportAudioTrack(_ track: AVAssetTrack, to url: URL) async throws {
@@ -197,39 +183,64 @@ func exportAudioTrack(_ track: AVAssetTrack, to url: URL) async throws {
     await writer.finishWriting()
 }
 
-// MARK: - Shared Speech Transcription (used by VideoAnalyzer + AudioAnalyzer)
+// MARK: - Speech Analysis (macOS 26 SpeechAnalyzer)
+// (requires @preconcurrency import Speech at top of file)
 
-func transcribeFile(_ url: URL) async throws -> [TranscriptSegment] {
-    let status = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
-        SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
-    }
-    guard status == .authorized else {
-        throw MediaError.speechNotAuthorized
-    }
+@available(macOS 26.0, *)
+func analyzeSpeechFile(_ url: URL) async throws -> (segments: [TranscriptSegment], soundType: SoundType) {
+    let locale = await SpeechTranscriber.supportedLocale(
+        equivalentTo: Locale(identifier: "zh-CN")
+    ) ?? Locale(identifier: "zh-CN")
 
-    let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "zh-CN"))!
-    let request = SFSpeechURLRecognitionRequest(url: url)
-    request.requiresOnDeviceRecognition = false
-    request.shouldReportPartialResults = false
+    let transcriber = SpeechTranscriber(
+        locale: locale,
+        preset: .transcription
+    )
+    let detector = SpeechDetector(
+        detectionOptions: SpeechDetector.DetectionOptions(
+            sensitivityLevel: .medium
+        ),
+        reportResults: true
+    )
 
-    return try await withCheckedThrowingContinuation { cont in
-        recognizer.recognitionTask(with: request) { result, error in
-            if let error {
-                // Soft degradation: speech recognition failure returns empty transcript
-                fputs("[media-desc] Speech recognition error: \(error.localizedDescription)\n", stderr)
-                cont.resume(returning: [])
-                return
-            }
-            guard let result, result.isFinal else { return }
-            let segments = result.bestTranscription.segments.map { seg in
-                TranscriptSegment(
-                    timestamp: seg.timestamp,
-                    duration: seg.duration,
-                    text: seg.substring,
-                    confidence: seg.confidence
-                )
-            }
-            cont.resume(returning: segments)
+    let audioFile = try AVAudioFile(forReading: url)
+    _ = try await SpeechAnalyzer(
+        inputAudioFile: audioFile,
+        modules: [transcriber, detector],
+        finishAfterFile: true
+    )
+
+    async let segments = collectSegments(transcriber)
+    async let soundType = collectSoundType(detector)
+    return try await (segments, soundType)
+}
+
+@available(macOS 26.0, *)
+func collectSegments(_ transcriber: SpeechTranscriber) async throws -> [TranscriptSegment] {
+    var segments: [TranscriptSegment] = []
+    for try await result in transcriber.results {
+        guard result.isFinal else { continue }
+        let text = String(result.text.characters)
+        let timestamp = result.range.start.seconds
+        let duration = result.range.duration.seconds
+        var confidence: Float = 1.0
+        // Extract confidence from AttributedString attributes.
+        if let attr = result.text.runs.first {
+            confidence = Float(attr.transcriptionConfidence ?? 1.0)
         }
+        segments.append(TranscriptSegment(
+            timestamp: timestamp, duration: duration,
+            text: text, confidence: confidence
+        ))
     }
+    return segments
+}
+
+@available(macOS 26.0, *)
+func collectSoundType(_ detector: SpeechDetector) async throws -> SoundType {
+    var hasSpeech = false
+    for try await detection in detector.results {
+        if detection.speechDetected { hasSpeech = true }
+    }
+    return hasSpeech ? .speech : .unknown
 }

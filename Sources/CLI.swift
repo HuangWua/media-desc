@@ -1,6 +1,7 @@
 import Foundation
 
 @main
+@available(macOS 26.0, *)
 struct MediaDesc {
     static func main() async {
         let args = CommandLine.arguments

@@ -242,7 +242,43 @@ func analyzeImage(_ path: String) async throws -> ImageReport {
         return collected
     }
 
-    return assembleImageReport(path: path, results: results)
+    // ── Post-process: OCR each detected document region ──
+    var finalResults = results
+    for (index, result) in results.enumerated() {
+        guard case .documents(let docs) = result, !docs.isEmpty else { continue }
+
+        let docsWithOCR: [DocumentRegion] = try await withThrowingTaskGroup(
+            of: (Int, DocumentRegion).self
+        ) { docGroup in
+            for (docIndex, doc) in docs.enumerated() {
+                docGroup.addTask {
+                    guard let cropped = cropCGImage(cgImage, to: doc.boundingBox) else {
+                        return (docIndex, doc)
+                    }
+                    do {
+                        let ocrObservations = try await RecognizeTextRequest().perform(on: cropped)
+                        let rows = parseDocumentOCR(ocrObservations)
+                        return (docIndex, DocumentRegion(
+                            boundingBox: doc.boundingBox,
+                            rows: rows
+                        ))
+                    } catch {
+                        return (docIndex, doc)
+                    }
+                }
+            }
+
+            var updated = docs
+            for try await (docIndex, updatedDoc) in docGroup {
+                updated[docIndex] = updatedDoc
+            }
+            return updated
+        }
+
+        finalResults[index] = .documents(docsWithOCR)
+    }
+
+    return assembleImageReport(path: path, results: finalResults)
 }
 
 // MARK: - Result Assembly (pure function)

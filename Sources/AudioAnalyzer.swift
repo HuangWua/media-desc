@@ -2,14 +2,11 @@ import Foundation
 
 // MARK: - Public API
 
+@available(macOS 26.0, *)
 func analyzeAudio(_ path: String) async throws -> AudioReport {
     let url = URL(fileURLWithPath: path)
 
-    // transcribeFile defined in VideoAnalyzer.swift (shared within module)
-    async let segments = transcribeFile(url)
-    async let sound = classifySoundFile(url)
-
-    let (transcript, soundType) = try await (segments, sound)
+    let (transcript, soundType) = try await analyzeSpeechFile(url)
 
     let fullText = transcript.map(\.text).joined()
     let lang = detectLanguage(fullText)
