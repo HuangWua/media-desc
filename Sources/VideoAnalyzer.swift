@@ -173,6 +173,7 @@ func exportAudioTrack(_ track: AVAssetTrack, to url: URL) async throws {
         AVLinearPCMBitDepthKey: 16,
         AVLinearPCMIsFloatKey: false,
         AVLinearPCMIsBigEndianKey: false,
+        AVLinearPCMIsNonInterleaved: false,
     ]
 
     let output = AVAssetReaderTrackOutput(track: track, outputSettings: outputSettings)
@@ -213,7 +214,12 @@ func transcribeFile(_ url: URL) async throws -> [TranscriptSegment] {
 
     return try await withCheckedThrowingContinuation { cont in
         recognizer.recognitionTask(with: request) { result, error in
-            if let error { cont.resume(throwing: error); return }
+            if let error {
+                // Soft degradation: speech recognition failure returns empty transcript
+                fputs("[media-desc] Speech recognition error: \(error.localizedDescription)\n", stderr)
+                cont.resume(returning: [])
+                return
+            }
             guard let result, result.isFinal else { return }
             let segments = result.bestTranscription.segments.map { seg in
                 TranscriptSegment(
