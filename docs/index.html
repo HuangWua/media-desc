@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>media-desc — macOS 26 全模态媒体分析 CLI</title>
+<style>
+:root{--bg:#0d0d1a;--card:#141428;--text:#ddd;--muted:#888;--accent:#e4a853;--green:#4caf84;--border:#202045}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'PingFang SC',sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;padding:24px}
+main{max-width:600px;width:100%}
+h1{font-size:26px;color:var(--accent);margin-bottom:4px}
+.sub{color:var(--muted);font-size:14px;margin-bottom:32px;line-height:1.6}
+.links{display:flex;flex-direction:column;gap:12px}
+.links a{display:block;padding:16px 20px;background:var(--card);border:1px solid var(--border);border-radius:8px;color:var(--text);text-decoration:none;transition:border-color .15s,background .15s}
+.links a:hover{border-color:var(--accent);background:rgba(228,168,83,.06)}
+.links a .title{font-size:15px;font-weight:600;margin-bottom:4px}
+.links a .desc{font-size:12px;color:var(--muted)}
+.tag{display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;margin-left:8px}
+.tag-visual{background:#4caf8420;color:var(--green);border:1px solid #4caf8440}
+.tag-report{background:#e4a85320;color:var(--accent);border:1px solid #e4a85340}
+</style>
+</head>
+<body>
+<main>
+<h1>📷 media-desc</h1>
+<p class="sub">macOS 26 全模态媒体分析 CLI 工具<br>图片/视频/音频 → 结构化 Markdown → 任何 LLM 可消费</p>
+<div class="links">
+<a href="https://github.com/HuangWua/media-desc">
+  <div class="title">📦 GitHub 仓库</div>
+  <div class="desc">源码 · README · 安装指南</div>
+</a>
+<a href="/media-desc/TEST_REPORT.md">
+  <div class="title">📋 全量测试报告 <span class="tag tag-report">Markdown</span></div>
+  <div class="desc">9 项测试 × 21 API 状态 × 修复记录</div>
+</a>
+<a href="/media-desc/test-visual-all.html">
+  <div class="title">🖼 全量 API 可视化 <span class="tag tag-visual">HTML</span></div>
+  <div class="desc">5 张图片卡片：原图 + 所有 API 结果逐项标注</div>
+</a>
+<a href="/media-desc/test-visual-long.html">
+  <div class="title">📜 长图安全切片对比 <span class="tag tag-visual">HTML</span></div>
+  <div class="desc">左 6868px 原图 + 右 55 块 OCR 文本对照</div>
+</a>
+</div>
+</main>
+</body>
+</html>
