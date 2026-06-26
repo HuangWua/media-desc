@@ -11,6 +11,38 @@
 
 ---
 
+## 亮点
+
+### 🚀 速度
+
+21 个 Vision API 全部在 `TaskGroup` 中并行执行，单张图片分析时间取决于最慢的 API（OCR），而非 API 数量之和。
+
+| 图片类型 | 耗时 | 说明 |
+|------|:--:|------|
+| 短图（1440×1080） | **~2.2s** | 21 API 全并行 |
+| 人像/动物/全身（~800×1000） | **~1.0s** | 尺寸小，OCR 快 |
+| 长图（1080×6868）安全切片 | **~4.3s** | 两阶段：textRects 检测→切片 OCR→合并 |
+
+> MacBook Pro M1 Pro 实测。视频和音频耗时取决于时长（Speech 框架 ~142× 实时）。
+
+### 📦 零依赖
+
+516KB 单二进制文件。无需 `pip install`、`npm install`、Docker、API Key。全部使用 Apple 原生框架（Vision / Speech / AVFoundation / NaturalLanguage），macOS 内置即用。
+
+### 🔒 本地处理
+
+所有分析在本地完成，图片/视频/音频**不会离开你的设备**。无网络请求，无第三方服务，无用户追踪。适合处理敏感文档、私人照片、机密录音。
+
+### 🧩 长图安全切片
+
+手机截图（1080×6868px）单次 Vision OCR 仅返回 ~9 块。media-desc 用 `DetectTextRectanglesRequest` 找到段落间隙，在安全位置切片后分别 OCR，再坐标还原+Levenshtein去重合并。**从不切断文字**。
+
+### 📝 结构化 Markdown 输出
+
+输出即标准 Markdown，可直接粘贴到 Claude / DeepSeek / ChatGPT 对话中。无需中间格式转换、无需手动排版。
+
+---
+
 ## 痛点
 
 DeepSeek V4、Claude 等文本模型 API **没有原生的图片/视频处理能力**。当你需要让 AI 分析一张截图、一段视频、一条录音时，只能手动描述或找第三方工具。
@@ -279,6 +311,22 @@ Sources/
 | Hand Pose | 需要手部在画面中足够大 |
 | Aesthetics 子分数 | blur/exposure 在 macOS 26 API 中不暴露 |
 | Aesthetics 长图 | 部分长图 overall 返回 0.00（API 行为） |
+
+---
+
+## 自行增强
+
+media-desc 是一个 **vibe coding 产物**——在 M1 Pro + macOS 26 上用 Swift 几个小时搭出来的原型。它远非完美，但开了一个口子：**让本地 AI 能力直接服务于 LLM 文本交互**。
+
+如果你是有能力的开发者，这里有些可以深入的方向：
+
+- **M3+/M4 设备**：`DetectLensSmudgeRequest`、`GenerateForegroundInstanceMaskRequest` 等 M1 Pro 不可用的 API 在更新芯片上可以解锁
+- **视频逐帧分析**：当前仅采样 12 帧，可以改为全帧率处理（代价是时间）
+- **Speaker 分离**：Speech 框架支持多说话人标注，可以增强会议/访谈转录
+- **更多输出格式**：JSON、JSON-LD、结构化 schema 等
+- **Swift 跨平台**：Vision/Speech 是 Apple 独占，但输出管线可以扩展 Linux/Windows
+
+M1 Pro 只是起点。Fork it, vibe it, ship it. 🚀
 
 ---
 
