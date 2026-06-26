@@ -304,7 +304,9 @@ func analyzeSpeechFile(_ url: URL) async throws -> (segments: [TranscriptSegment
     // Serial collection — SpeechAnalyzer is an actor; concurrent AsyncSequence iteration
     // on the same actor may not be truly parallel. Given 142x realtime, this is fine.
     let segments = try await collectSegments(transcriber)
-    let soundType = try await collectSoundType(detector)
+    // SpeechDetector.results may be empty after finishAfterFile (macOS 26 behavior);
+    // fallback to transcript-based heuristic.
+    let soundType = try await collectSoundType(detector, hasTranscript: !segments.isEmpty)
     return (segments, soundType)
 }
 
@@ -330,10 +332,12 @@ func collectSegments(_ transcriber: SpeechTranscriber) async throws -> [Transcri
 }
 
 @available(macOS 26.0, *)
-func collectSoundType(_ detector: SpeechDetector) async throws -> SoundType {
-    var hasSpeech = false
+func collectSoundType(_ detector: SpeechDetector, hasTranscript: Bool) async throws -> SoundType {
+    // Primary: SpeechDetector
     for try await detection in detector.results {
-        if detection.speechDetected { hasSpeech = true }
+        if detection.speechDetected { return .speech }
     }
-    return hasSpeech ? .speech : .unknown
+    // Fallback: if transcriber produced text, audio contains speech
+    if hasTranscript { return .speech }
+    return .unknown
 }
