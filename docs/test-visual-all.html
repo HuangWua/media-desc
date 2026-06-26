@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>media-desc · 全API测试报告</title>
+<style>
+:root {
+  --bg:#0d0d1a; --card:#141428; --text:#ddd; --muted:#777;
+  --accent:#e4a853; --green:#4caf84; --red:#e4532e; --border:#202045;
+  --pass:#4caf8420; --warn:#e4a85320; --fail:#e4532e20;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'PingFang SC',sans-serif;padding:24px}
+h1{font-size:22px;color:var(--accent);margin-bottom:4px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:28px}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:20px;margin-bottom:32px}
+@media(max-width:600px){.grid{grid-template-columns:1fr}}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.card-top{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);background:rgba(0,0,0,.2)}
+.card-top h3{font-size:13px}
+.card-top .dims{font-size:11px;color:var(--muted)}
+
+.img-box{background:#000;max-height:420px;overflow-y:auto;border-bottom:1px solid var(--border)}
+.img-box img{width:100%;display:block}
+
+.api-list{padding:8px 0}
+.api-row{display:flex;align-items:baseline;padding:5px 16px;font-size:12px;gap:8px}
+.api-row .tag{font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;flex-shrink:0;min-width:28px;text-align:center}
+.tag-ok{background:var(--pass);color:var(--green)}
+.tag-warn{background:var(--warn);color:var(--accent)}
+.tag-fail{background:var(--fail);color:var(--red)}
+.api-row .name{flex:1;color:var(--text)}
+.api-row .detail{color:var(--muted);font-size:11px;text-align:right}
+
+.ocr-block{padding:3px 16px;font-size:11px;color:var(--muted);border-left:2px solid transparent;max-height:120px;overflow-y:auto}
+.ocr-block:hover{background:rgba(228,168,83,.06);border-left-color:rgba(228,168,83,.3)}
+.ocr-block .n{color:var(--muted);margin-right:6px}
+
+.summary-bar{display:flex;gap:20px;padding:16px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:24px;flex-wrap:wrap}
+.summary-bar .stat{display:flex;align-items:baseline;gap:6px}
+.summary-bar .val{font-size:32px;font-weight:700}
+.summary-bar .lbl{font-size:12px;color:var(--muted)}
+.val-ok{color:var(--green)}
+.val-warn{color:var(--accent)}
+.val-fail{color:var(--red)}
+</style>
+</head>
+<body>
+
+<h1>📊 media-desc · 全 API 测试报告</h1>
+<p class="sub">macOS 26.5 Vision · M1 Pro · 21 APIs · 5 张测试图 · 2026-06-26</p>
+
+<div class="summary-bar">
+  <div class="stat"><span class="val val-ok">18</span><span class="lbl">API 正常</span></div>
+  <div class="stat"><span class="val val-warn">2</span><span class="lbl">图像依赖</span></div>
+  <div class="stat"><span class="val val-fail">1</span><span class="lbl">M1 Pro 限制</span></div>
+</div>
+
+<!-- ====== CARD 1: Document (normal) ====== -->
+<div class="grid">
+<div class="card">
+  <div class="card-top"><h3>📄 短图·文档</h3><span class="dims">b.png · 1440×1080</span></div>
+  <div class="img-box"><img src="imgs/b.png" alt="b.png"></div>
+  <div class="api-list">
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Scene Classification</span><span class="detail">document:0.32 · chart:0.32</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">OCR</span><span class="detail">14 blocks · conf 0.43</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Text Regions</span><span class="detail">1 region</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Document Regions</span><span class="detail">1 region</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Aesthetics</span><span class="detail">overall 0.43</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Visual Attention</span><span class="detail">~96% / ~22%</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Feature Print</span><span class="detail">SHA256 ✓</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Faces / Human / Hand</span><span class="detail">skipped (document scene)</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Barcodes / Animals</span><span class="detail">none (expected)</span></div>
+    <div class="api-row"><span class="tag tag-warn">M1</span><span class="name">Lens Smudge</span><span class="detail">smudgenet E5 missing</span></div>
+  </div>
+  <div class="ocr-block">
+    <div><span class="n">1</span>Z</div><div><span class="n">2</span>H</div>
+    <div><span class="n">3</span>u</div><div><span class="n">4</span>5</div>
+    <div><span class="n">5</span>9月10日、星期六</div><div><span class="n">6</span>八月十五 中秋芦</div>
+    <div>... 14 blocks total</div>
+  </div>
+</div>
+
+<!-- ====== CARD 2: Long document ====== -->
+<div class="card">
+  <div class="card-top"><h3>📜 长图·安全切片</h3><span class="dims">c.png · 1080×6868 · isLongImage ✓</span></div>
+  <div class="img-box"><img src="imgs/c.png" alt="c.png (6868px)"></div>
+  <div class="api-list">
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Scene Classification</span><span class="detail">document:0.67</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">OCR (安全切片)</span><span class="detail">55 blocks · conf 0.97</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Text Regions</span><span class="detail">65 regions · gap analysis ✓</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Document Regions</span><span class="detail">1 region</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Aesthetics</span><span class="detail">overall 0.00</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Visual Attention</span><span class="detail">~100% / ~93%</span></div>
+    <div class="api-row"><span class="tag tag-warn">M1</span><span class="name">Lens Smudge</span><span class="detail">smudgenet E5 missing</span></div>
+  </div>
+  <div class="ocr-block">
+    <div><span class="n">1</span>直接发国籍不就不是境外势力了？</div>
+    <div><span class="n">2</span>2015年，乌克兰GDP下降9.9%，工业生产总值</div>
+    <div><span class="n">3</span>下降13.4%，超过500万人失业。</div>
+    <div><span class="n">4</span>到2018年，乌克兰与示威运动之前相比，已失</div>
+    <div><span class="n">5</span>去了20%的工业生产能力，经济结构几乎完全被</div>
+    <div>... 55 blocks · stderr clean · no slicing warnings</div>
+  </div>
+</div>
+
+<!-- ====== CARD 3: Face portrait ====== -->
+<div class="card">
+  <div class="card-top"><h3>👤 人像·大头照</h3><span class="dims">face.jpg · 640×800</span></div>
+  <div class="img-box"><img src="imgs/face.jpg" alt="face portrait"></div>
+  <div class="api-list">
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Scene Classification</span><span class="detail">adult:0.94 · people:0.94</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Faces</span><span class="detail">1 face ✓</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Face Landmarks</span><span class="detail">✓</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Face Quality</span><span class="detail">✓</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Human Rectangles</span><span class="detail">1 person</span></div>
+    <div class="api-row"><span class="tag tag-warn">~</span><span class="name">Body Pose 2D</span><span class="detail">no pose (headshot only)</span></div>
+    <div class="api-row"><span class="tag tag-warn">~</span><span class="name">Hand Pose</span><span class="detail">no hands visible</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Aesthetics</span><span class="detail">overall 0.86</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Visual Attention</span><span class="detail">✓</span></div>
+    <div class="api-row"><span class="tag tag-warn">M1</span><span class="name">Lens Smudge</span><span class="detail">M1 Pro limit</span></div>
+  </div>
+</div>
+
+<!-- ====== CARD 4: Full body ====== -->
+<div class="card">
+  <div class="card-top"><h3>🧍 全身·半身照</h3><span class="dims">fullbody.jpg · 800×1200</span></div>
+  <div class="img-box"><img src="imgs/fullbody.jpg" alt="full body"></div>
+  <div class="api-list">
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Scene Classification</span><span class="detail">people:0.86 · adult:0.86</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Faces</span><span class="detail">1 face ✓</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Human Rectangles</span><span class="detail">1 person</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Body Pose 2D</span><span class="detail">11 joints ✓</span></div>
+    <div class="api-row"><span class="tag tag-warn">~</span><span class="name">Body Pose 3D</span><span class="detail">no pose (side angle)</span></div>
+    <div class="api-row"><span class="tag tag-warn">~</span><span class="name">Hand Pose</span><span class="detail">no hands visible</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Aesthetics</span><span class="detail">overall 1.00</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Visual Attention</span><span class="detail">~41% / ~100%</span></div>
+  </div>
+  <div class="ocr-block">
+    <div><span class="n">Joints</span>leftEye(0.90) · rightEye(0.92) · nose(0.84) · leftEar(0.56) · rightEar(0.84)</div>
+    <div><span class="n"></span>neck(0.42) · leftShoulder(0.43) · rightShoulder(0.41)</div>
+    <div><span class="n"></span>leftElbow(0.18) · leftWrist(0.19) · rightWrist(0.18)</div>
+  </div>
+</div>
+
+<!-- ====== CARD 5: Animal ====== -->
+<div class="card">
+  <div class="card-top"><h3>🐕 动物·狗</h3><span class="dims">animal.jpg · 800×1000</span></div>
+  <div class="img-box"><img src="imgs/animal.jpg" alt="dog"></div>
+  <div class="api-list">
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Scene Classification</span><span class="detail">animal:0.37 · dog:0.37 · canine:0.37</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Animals</span><span class="detail">Dog: 0.60</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Animal Pose</span><span class="detail">18 joints · conf 1.00 ✓</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Faces</span><span class="detail">none (animal, not human)</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Aesthetics</span><span class="detail">overall 1.00</span></div>
+    <div class="api-row"><span class="tag tag-ok">OK</span><span class="name">Visual Attention</span><span class="detail">~66% / ~91%</span></div>
+    <div class="api-row"><span class="tag tag-warn">M1</span><span class="name">Lens Smudge</span><span class="detail">M1 Pro limit</span></div>
+  </div>
+</div>
+</div>
+
+<!-- ====== FOOTER: API table ====== -->
+<div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:24px">
+<div style="padding:14px 16px;border-bottom:1px solid var(--border);font-size:14px;font-weight:600">全部 21 API · 逐项状态</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr))">
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">RecognizeTextRequest (OCR)</span><span class="detail">+ 安全切片</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">RecognizeDocumentsRequest</span><span class="detail">文档+表格</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">ClassifyImageRequest</span><span class="detail">场景分类</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectBarcodesRequest</span><span class="detail">条码</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectFaceRectanglesRequest</span><span class="detail">人脸框</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectFaceLandmarksRequest</span><span class="detail">人脸特征点</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectFaceCaptureQualityRequest</span><span class="detail">人脸质量</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">CalculateImageAestheticsScoresRequest</span><span class="detail">美学评分</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">GenerateAttentionBasedSaliencyImageRequest</span><span class="detail">注意力显著性</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">GenerateObjectnessBasedSaliencyImageRequest</span><span class="detail">物体显著性</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectRectanglesRequest</span><span class="detail">几何矩形</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectContoursRequest</span><span class="detail">轮廓</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectTextRectanglesRequest</span><span class="detail">文字区域</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">RecognizeAnimalsRequest</span><span class="detail">动物识别</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectHumanBodyPoseRequest (2D)</span><span class="detail">人体姿态2D</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectHumanHandPoseRequest</span><span class="detail">手势</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectHumanBodyPose3DRequest</span><span class="detail">人体姿态3D</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectAnimalBodyPoseRequest</span><span class="detail">动物姿态</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">DetectHumanRectanglesRequest</span><span class="detail">人体检测</span></div>
+<div class="api-row"><span class="tag tag-ok">✓</span><span class="name">GenerateImageFeaturePrintRequest</span><span class="detail">图像指纹 SHA256</span></div>
+<div class="api-row"><span class="tag tag-warn">✗</span><span class="name">DetectLensSmudgeRequest</span><span class="detail">M1 Pro smudgenet E5 不可用</span></div>
+</div>
+</div>
+
+</body>
+</html>

@@ -18,6 +18,17 @@
 | 8 | `speech_en.aiff` | 音频·英文 | ~6s, 22kHz | en · 1 segment · conf 1.00 |
 | 9 | `红色高跟鞋.mp3` | 音频·音乐 | 206s, 44.1kHz 320kbps | zh-Hans · 20 segments |
 
+### 🖼 可视化对比
+
+测试图片 + OCR/API 结果的可视化 HTML 页面（需搭配测试图片使用）：
+
+| 页面 | 说明 |
+|------|------|
+| [全量 API 测试面板](test-visual-all.html) | 5 张图片卡片：原图 + 所有 API 结果逐项标注 ✅/⚠️ |
+| [长图安全切片对比](test-visual-long.html) | 左 6868px 原图 + 右 55 块 OCR 文本对照 |
+
+> 图片位于 `~/Study/MoDaSystem/temp/test-images/`。通过 `python3 -m http.server` 在 `docs/` 目录启动本地服务即可浏览。
+
 ---
 
 ## 1. 图片 — 短图 b.png（1440×1080 日历截图）
